@@ -1,3 +1,6 @@
+// llama-graph.cpp - LLaMA计算图实现
+// 本文件实现了LLaMA模型的计算图构建和优化功能，用于高效执行推理操作
+
 #include "llama-graph.h"
 
 #include "llama-impl.h"
@@ -18,8 +21,9 @@
 #include <sstream>
 #include <unordered_set>
 
-// dedup helpers
+// 去重辅助函数
 
+// 构建注意力输入的键-查询掩码
 static ggml_tensor * build_attn_inp_kq_mask(
         ggml_context * ctx,
         const llama_kv_cache_context * mctx,

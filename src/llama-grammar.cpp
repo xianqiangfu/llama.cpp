@@ -1,3 +1,6 @@
+// llama-grammar.cpp - LLaMA语法约束实现
+// 本文件实现了基于GBNF（GGML BNF）的语法约束，用于控制模型输出的格式和内容
+
 #include "llama-grammar.h"
 
 #include "llama-impl.h"
@@ -12,10 +15,11 @@
 
 #define MAX_REPETITION_THRESHOLD 2000
 //
-// helpers
+// 辅助函数
 //
 
-// NOTE: assumes valid utf8 (but checks for overrun)
+// 解码UTF-8字符
+// 注意：假设输入是有效的UTF-8（但检查溢出）
 static std::pair<uint32_t, const char *> decode_utf8(const char * src) {
     static const int lookup[] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 3, 4 };
     uint8_t  first_byte = static_cast<uint8_t>(*src);

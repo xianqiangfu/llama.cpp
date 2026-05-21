@@ -1,5 +1,8 @@
-#define _CRT_SECURE_NO_DEPRECATE // Disables "unsafe" warnings on Windows
-#define _USE_MATH_DEFINES // For M_PI on MSVC
+// ggml-cpu.c - GGML CPU后端实现
+// 本文件实现了GGML的CPU后端，包括算子调度、内存管理和多线程计算
+
+#define _CRT_SECURE_NO_DEPRECATE // 禁用Windows上的"不安全"警告
+#define _USE_MATH_DEFINES // 用于MSVC的M_PI定义
 
 #include "ggml-backend-impl.h"
 #include "ggml-backend.h"
@@ -16,7 +19,7 @@
 #include "common.h"
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
-#include <malloc.h> // using malloc.h with MSC/MINGW
+#include <malloc.h> // 在MSC/MINGW中使用malloc.h
 #elif !defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__OpenBSD__)
 #include <alloca.h>
 #endif
@@ -54,9 +57,9 @@
 #    include "spacemit/ime.h"
 #endif
 
-// Note: once we move threading into a separate C++ file
-// will use std::hardware_destructive_interference_size instead of hardcoding it here
-// and we'll use C++ attribute syntax.
+// 注意：一旦我们将线程移动到单独的C++文件中
+// 将使用 std::hardware_destructive_interference_size 而不是在这里硬编码
+// 并使用C++属性语法。
 #define GGML_CACHE_LINE  64
 
 #if defined(__clang__) || defined(__GNUC__)
@@ -76,10 +79,10 @@
 #define UNUSED GGML_UNUSED
 #define SWAP(x, y, T) do { T SWAP = x; (x) = y; (y) = SWAP; } while (0)
 
-// precomputed f32 table for f16 (256 KB) (simd-mappings.h)
+// 预计算的f16转f32表格（256 KB）（simd-mappings.h）
 float ggml_table_f32_f16[1 << 16];
 
-// precomputed f32 table for e8m0 half (1 KB) (simd-mappings.h)
+// 预计算的e8m0半精度转f32表格（1 KB）（simd-mappings.h）
 float ggml_table_f32_e8m0_half[1 << 8];
 
 #if defined(__ARM_ARCH)
@@ -124,21 +127,21 @@ static void atomic_store(atomic_int * ptr, LONG val) {
     InterlockedExchange(ptr, val);
 }
 static void atomic_store_explicit(atomic_int * ptr, LONG val, memory_order mo) {
-    // TODO: add support for explicit memory order
+    // TODO: 添加显式内存顺序支持
     InterlockedExchange(ptr, val);
 }
 static LONG atomic_load(atomic_int * ptr) {
     return InterlockedCompareExchange(ptr, 0, 0);
 }
 static LONG atomic_load_explicit(atomic_int * ptr, memory_order mo) {
-    // TODO: add support for explicit memory order
+    // TODO: 添加显式内存顺序支持
     return InterlockedCompareExchange(ptr, 0, 0);
 }
 static LONG atomic_fetch_add(atomic_int * ptr, LONG inc) {
     return InterlockedExchangeAdd(ptr, inc);
 }
 static LONG atomic_fetch_add_explicit(atomic_int * ptr, LONG inc, memory_order mo) {
-    // TODO: add support for explicit memory order
+    // TODO: 添加显式内存顺序支持
     return InterlockedExchangeAdd(ptr, inc);
 }
 static atomic_bool atomic_flag_test_and_set(atomic_flag * ptr) {

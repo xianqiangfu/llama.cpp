@@ -1,3 +1,6 @@
+// llama-kv-cache.cpp - LLaMA键值缓存实现
+// 本文件实现了LLaMA模型的键值缓存机制，用于高效存储和检索Transformer模型的注意力计算结果
+
 #include "llama-kv-cache.h"
 
 #include "llama-impl.h"
@@ -13,12 +16,13 @@
 #include <map>
 #include <stdexcept>
 
+// 检查是否为2的幂
 static bool ggml_is_power_of_2(int n) {
     return (n & (n - 1)) == 0;
 }
 
-// orthonormal Walsh-Hadamard rotation matrix
-// note: res^2 == I
+// 生成正交Walsh-Hadamard旋转矩阵
+// 注意：res^2 == I（单位矩阵）
 static void ggml_gen_hadamard(ggml_tensor * tensor) {
     assert(tensor->type == GGML_TYPE_F32);
 

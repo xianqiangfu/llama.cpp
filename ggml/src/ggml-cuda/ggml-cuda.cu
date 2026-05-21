@@ -1,3 +1,6 @@
+// ggml-cuda.cu - GGML CUDA后端实现
+// 本文件实现了GGML的CUDA后端，用于在NVIDIA GPU上执行张量计算
+
 #include "ggml-cuda.h"
 #include "ggml-impl.h"
 #include "ggml-backend-impl.h"
@@ -90,20 +93,22 @@ static_assert(sizeof(half) == sizeof(ggml_fp16_t), "wrong fp16 size");
 #define GGML_LOG_WARN_ONCE(str) \
     { static std::once_flag warn_flag; std::call_once(warn_flag, []() { GGML_LOG_WARN(str); }); }
 
+// CUDA错误处理函数
 [[noreturn]]
 void ggml_cuda_error(const char * stmt, const char * func, const char * file, int line, const char * msg) {
-    int id = -1; // in case cudaGetDevice fails
+    int id = -1; // 以防cudaGetDevice失败
     (void)cudaGetDevice(&id);
 
     GGML_LOG_ERROR(GGML_CUDA_NAME " error: %s\n", msg);
     GGML_LOG_ERROR("  current device: %d, in function %s at %s:%d\n", id, func, file, line);
     GGML_LOG_ERROR("  %s\n", stmt);
-    // abort with GGML_ABORT to get a stack trace
+    // 使用GGML_ABORT中止以获取堆栈跟踪
     GGML_ABORT(GGML_CUDA_NAME " error");
 }
 
-// this is faster on Windows
-// probably because the Windows CUDA libraries forget to make this check before invoking the drivers
+// 设置CUDA设备
+// 在Windows上更快
+// 可能是因为Windows CUDA库忘记在调用驱动程序之前进行此检查
 void ggml_cuda_set_device(int device) {
     int current_device;
     CUDA_CHECK(cudaGetDevice(&current_device));
@@ -115,12 +120,14 @@ void ggml_cuda_set_device(int device) {
     CUDA_CHECK(cudaSetDevice(device));
 }
 
+// 获取当前CUDA设备
 int ggml_cuda_get_device() {
     int id;
     CUDA_CHECK(cudaGetDevice(&id));
     return id;
 }
 
+// CUDA设备内存分配
 static cudaError_t ggml_cuda_device_malloc(void ** ptr, size_t size, int device) {
     ggml_cuda_set_device(device);
     cudaError_t err;
@@ -128,13 +135,13 @@ static cudaError_t ggml_cuda_device_malloc(void ** ptr, size_t size, int device)
         err = cudaMallocManaged(ptr, size);
 #if defined(GGML_USE_HIP)
         if (err == hipSuccess) {
-            // hipMemAdviseSetCoarseGrain is an optional performance hint;
-            // ignore errors (e.g. hipErrorInvalidValue on some APU/iGPU configs).
+            // hipMemAdviseSetCoarseGrain是可选的性能提示；
+            // 忽略错误（例如某些APU/iGPU配置上的hipErrorInvalidValue）。
             (void)cudaMemAdvise(*ptr, size, hipMemAdviseSetCoarseGrain, device);
-            (void)hipGetLastError(); // clear any error
+            (void)hipGetLastError(); // 清除任何错误
         }
 
-        // fall back to cudaMalloc if not supported (e.g. on Windows)
+        // 如果不支持（例如在Windows上），则回退到cudaMalloc
         if (err == hipErrorNotSupported) {
             static bool warned_unsupported = false;
             if (!warned_unsupported) {

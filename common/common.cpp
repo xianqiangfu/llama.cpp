@@ -1,3 +1,6 @@
+// common.cpp - 通用功能实现
+// 本文件实现了LLaMA工具的通用功能，包括参数解析、模型加载、采样配置等
+
 #include "ggml.h"
 #include "gguf.h"
 
@@ -59,8 +62,10 @@
 #pragma warning(disable: 4244 4267) // possible loss of data
 #endif
 
+// 时间测量构造函数
 common_time_meas::common_time_meas(int64_t & t_acc, bool disable) : t_start_us(disable ? -1 : ggml_time_us()), t_acc(t_acc) {}
 
+// 时间测量析构函数
 common_time_meas::~common_time_meas() {
     if (t_start_us >= 0) {
         t_acc += ggml_time_us() - t_start_us;
@@ -68,12 +73,13 @@ common_time_meas::~common_time_meas() {
 }
 
 //
-// CPU utils
+// CPU工具函数
 //
 
+// 获取系统物理核心数
 int32_t common_cpu_get_num_physical_cores() {
 #ifdef __linux__
-    // enumerate the set of thread siblings, num entries is num cores
+    // 枚举线程兄弟集合，条目数即为核心数
     std::unordered_set<std::string> siblings;
     for (uint32_t cpu=0; cpu < UINT32_MAX; ++cpu) {
         std::ifstream thread_siblings("/sys/devices/system/cpu/cpu"

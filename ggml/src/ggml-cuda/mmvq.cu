@@ -1,3 +1,6 @@
+// mmvq.cu - 量化矩阵向量乘法CUDA实现
+// 本文件实现了量化矩阵向量乘法的CUDA kernel，用于加速量化模型的推理
+
 #include "mmvq.cuh"
 #include "quantize.cuh"
 #include "unary.cuh"
@@ -5,8 +8,10 @@
 
 #include <cstdint>
 
+// 量化向量点积函数类型定义
 typedef float (*vec_dot_q_cuda_t)(const void * __restrict__ vbq, const block_q8_1 * __restrict__ bq8_1, const int & kbx, const int & iqs);
 
+// 根据量化类型获取向量点积函数
 static constexpr __device__ vec_dot_q_cuda_t get_vec_dot_q_cuda(ggml_type type) {
     switch (type) {
         case GGML_TYPE_Q1_0:    return vec_dot_q1_0_q8_1;

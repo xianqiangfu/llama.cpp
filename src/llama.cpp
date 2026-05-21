@@ -1,3 +1,6 @@
+// llama.cpp - LLaMA模型主接口实现
+// 本文件实现了LLaMA模型的主要公共接口函数，包括后端初始化、设备支持查询、上下文管理等
+
 #include "llama.h"
 
 #include "llama-impl.h"
@@ -31,9 +34,10 @@
 #endif
 
 //
-// interface implementation
+// 接口实现
 //
 
+// 获取Flash Attention类型名称
 const char * llama_flash_attn_type_name(enum llama_flash_attn_type flash_attn_type) {
     switch (flash_attn_type) {
         case LLAMA_FLASH_ATTN_TYPE_AUTO:

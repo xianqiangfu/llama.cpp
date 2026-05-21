@@ -1,3 +1,6 @@
+// ggml-metal-context.m - GGML Metal上下文实现
+// 本文件实现了GGML Metal后端的上下文管理，用于在Apple设备上执行张量计算
+
 #import "ggml-metal-context.h"
 
 #import "ggml-impl.h"
@@ -16,7 +19,7 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
-// max number of MTLCommandBuffer used to submit a graph for processing
+// 用于提交图进行处理的最大MTLCommandBuffer数量
 #define GGML_METAL_MAX_COMMAND_BUFFERS 8
 
 struct ggml_metal_command_buffer {
@@ -29,11 +32,11 @@ struct ggml_metal {
     ggml_metal_device_t  dev;
     ggml_metal_library_t lib;
 
-    ggml_metal_event_t ev_cpy; // for async copies
+    ggml_metal_event_t ev_cpy; // 用于异步复制
 
     dispatch_queue_t d_queue;
 
-    // additional, inference-time compiled pipelines
+    // 推理时编译的额外管道
     ggml_metal_pipelines_t pipelines_ext;
 
     bool use_fusion;
@@ -43,41 +46,41 @@ struct ggml_metal {
     int debug_graph;
     int debug_fusion;
 
-    // how many times a given op was fused
+    // 给定操作被融合的次数
     uint64_t fuse_cnt[GGML_OP_COUNT];
 
-    // capture state
+    // 捕获状态
     int capture_compute;
     bool capture_started;
 
     id<MTLCaptureScope> capture_scope;
 
-    // command buffer state
-    int n_cb;           // number of extra threads used to submit the command buffers
-    int n_nodes_0;      // number of nodes submitted by the main thread
-    int n_nodes_1;      // remaining number of nodes submitted by the n_cb threads
+    // 命令缓冲区状态
+    int n_cb;           // 用于提交命令缓冲区的额外线程数
+    int n_nodes_0;      // 主线程提交的节点数
+    int n_nodes_1;      // n_cb线程提交的剩余节点数
     int n_nodes_per_cb;
 
     struct ggml_cgraph * gf;
 
-    // the callback given to the thread pool
+    // 给线程池的回调
     void (^encode_async)(size_t ith);
 
-    // n_cb command buffers + 1 used by the main thread
+    // n_cb个命令缓冲区 + 主线程使用的1个
     struct ggml_metal_command_buffer cmd_bufs[GGML_METAL_MAX_COMMAND_BUFFERS + 1];
 
-    // extra command buffers for things like getting, setting and copying tensors
+    // 用于获取、设置和复制张量的额外命令缓冲区
     NSMutableArray * cmd_bufs_ext;
 
-    // the last command buffer queued into the Metal queue with operations relevant to the current Metal backend
+    // 最后一个在Metal队列中排队的命令缓冲区，包含与当前Metal后端相关的操作
     id<MTLCommandBuffer> cmd_buf_last;
 
-    // abort ggml_metal_graph_compute if callback returns true
+    // 如果回调返回true，则中止ggml_metal_graph_compute
     ggml_abort_callback abort_callback;
     void *              abort_callback_data;
 
-    // error state - set when a command buffer fails during synchronize
-    // once set, graph_compute will return GGML_STATUS_FAILED until the backend is recreated
+    // 错误状态 - 在同步期间命令缓冲区失败时设置
+    // 一旦设置，graph_compute将返回GGML_STATUS_FAILED，直到重建后端
     bool has_error;
 };
 

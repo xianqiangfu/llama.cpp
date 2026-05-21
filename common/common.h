@@ -1,4 +1,5 @@
-// Various helper functions and utilities
+// common.h - 通用辅助函数和工具
+// 本文件提供了LLaMA工具的通用函数和工具类，包括参数解析、时间测量、CPU配置等
 
 #pragma once
 
@@ -19,15 +20,18 @@
 #define _WIN32_WINNT 0x0A00
 #endif
 
+// 目录分隔符定义
 #ifdef _WIN32
 #define DIRECTORY_SEPARATOR '\\'
 #else
 #define DIRECTORY_SEPARATOR '/'
 #endif // _WIN32
 
+// 错误退出宏
 #define die(msg)          do { fputs("error: " msg "\n", stderr);                exit(1); } while (0)
 #define die_fmt(fmt, ...) do { fprintf(stderr, "error: " fmt "\n", __VA_ARGS__); exit(1); } while (0)
 
+// 时间测量工具
 struct common_time_meas {
     common_time_meas(int64_t & t_acc, bool disable = false);
     ~common_time_meas();

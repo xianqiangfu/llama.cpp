@@ -1,3 +1,6 @@
+// llama-batch.cpp - LLaMA批次处理实现
+// 本文件实现了LLaMA模型的批次处理功能，用于高效处理多个序列的并行推理
+
 #include "llama-batch.h"
 
 #include "llama-impl.h"
@@ -9,6 +12,7 @@
 #include <algorithm>
 #include <sstream>
 
+// 批次分配器构造函数
 llama_batch_allocr::llama_batch_allocr(uint32_t n_pos_per_embd) : n_pos_per_embd(n_pos_per_embd) {
     const char * LLAMA_BATCH_DEBUG = getenv("LLAMA_BATCH_DEBUG");
     debug = LLAMA_BATCH_DEBUG ? atoi(LLAMA_BATCH_DEBUG) : 0;
@@ -22,6 +26,7 @@ llama_batch_allocr::llama_batch_allocr(uint32_t n_pos_per_embd) : n_pos_per_embd
     seq_idx.resize(LLAMA_MAX_SEQ, -1);
 }
 
+// 初始化批次分配器
 bool llama_batch_allocr::init(
         const llama_batch & batch_inp,
         const llama_vocab & vocab,
@@ -38,7 +43,7 @@ bool llama_batch_allocr::init(
     GGML_ASSERT(batch.n_tokens > 0);
 
     //
-    // validate input batch
+    // 验证输入批次
     //
 
     if (n_seq_max > LLAMA_MAX_SEQ) {
@@ -67,7 +72,7 @@ bool llama_batch_allocr::init(
     }
 
     //
-    // auto-generate missing fields
+    // 自动生成缺失字段
     //
 
     if (!batch.n_seq_id) {

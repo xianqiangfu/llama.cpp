@@ -1,3 +1,6 @@
+// ops.cpp - GGML CPU算子实现
+// 本文件实现了GGML CPU后端的各种算子，包括复制、数学运算等
+
 #include "ops.h"
 
 #include "ggml-cpu.h"
@@ -12,7 +15,7 @@
 #include <cfloat>
 #include <cmath>
 
-// ggml_compute_forward_dup
+// 复制算子（同类型连续内存）
 
 static void ggml_compute_forward_dup_same_cont(
         const ggml_compute_params * params,
@@ -26,10 +29,10 @@ static void ggml_compute_forward_dup_same_cont(
 
     const size_t nb0 = ggml_type_size(src0->type);
 
-    const int ith = params->ith; // thread index
-    const int nth = params->nth; // number of threads
+    const int ith = params->ith; // 线程索引
+    const int nth = params->nth; // 线程数
 
-    // parallelize by blocks
+    // 按块并行化
     const int nk = ggml_nelements(src0)/ggml_blck_size(src0->type);
     const int dr = (nk + nth - 1) / nth;
     const int k0 = dr * ith;
@@ -43,6 +46,7 @@ static void ggml_compute_forward_dup_same_cont(
     }
 }
 
+// 浮点类型复制算子
 template<typename src_t, typename dst_t>
 static void ggml_compute_forward_dup_flt(
         const ggml_compute_params * params,
@@ -55,22 +59,22 @@ static void ggml_compute_forward_dup_flt(
 
     GGML_TENSOR_UNARY_OP_LOCALS
 
-    const int ith = params->ith; // thread index
-    const int nth = params->nth; // number of threads
+    const int ith = params->ith; // 线程索引
+    const int nth = params->nth; // 线程数
 
-    // parallelize by rows
+    // 按行并行化
     const int nr = ne01;
-    // number of rows per thread
+    // 每线程的行数
     const int dr = (nr + nth - 1) / nth;
-    // row range for this thread
+    // 本线程的行范围
     const int ir0 = dr * ith;
     const int ir1 = MIN(ir0 + dr, nr);
 
-    // case: type & row size equal
+    // 情况：类型和行大小相等
     if (src0->type == dst->type &&
         ne00 == ne0 &&
         nb00 == ggml_type_size(src0->type) && nb0 == ggml_type_size(dst->type)) {
-        // copy by rows
+        // 按行复制
         const size_t rs = ne00*nb00;
         for (int64_t i03 = 0; i03 < ne03; i03++) {
             for (int64_t i02 = 0; i02 < ne02; i02++) {

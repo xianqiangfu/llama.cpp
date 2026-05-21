@@ -1,3 +1,6 @@
+// ggml-metal-device.m - GGML Metal设备实现
+// 本文件实现了GGML Metal后端的设备管理，用于在Apple GPU上执行张量计算
+
 #import "ggml-metal-device.h"
 
 #import "ggml-impl.h"
@@ -13,7 +16,7 @@
 #define TARGET_OS_VISION 0
 #endif
 
-// create residency sets only on macOS >= 15.0
+// 仅在macOS >= 15.0上创建驻留集
 #if !TARGET_CPU_X86_64 && TARGET_OS_OSX && __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000 || \
     TARGET_OS_IOS && __IPHONE_OS_VERSION_MAX_ALLOWED >= 180000 || \
     TARGET_OS_TV && __TV_OS_VERSION_MAX_ALLOWED >= 180000 || \
@@ -21,12 +24,12 @@
 #define GGML_METAL_HAS_RESIDENCY_SETS 1
 #endif
 
-// overload of MTLGPUFamilyMetalX (not available in some environments)
+// MTLGPUFamilyMetalX的重载（在某些环境中不可用）
 static const NSInteger MTLGPUFamilyMetal3_GGML = 5001;
 static const NSInteger MTLGPUFamilyMetal4_GGML = 5002;
 
 #if !GGML_METAL_EMBED_LIBRARY
-// Here to assist with NSBundle Path Hack
+// 用于协助NSBundle路径Hack
 @interface GGMLMetalClass : NSObject
 @end
 @implementation GGMLMetalClass
@@ -34,13 +37,14 @@ static const NSInteger MTLGPUFamilyMetal4_GGML = 5002;
 #endif
 
 //
-// MTLFunctionConstantValues wrapper
+// MTLFunctionConstantValues包装器
 //
 
 struct ggml_metal_cv {
     MTLFunctionConstantValues * obj;
 };
 
+// 初始化常量值
 ggml_metal_cv_t ggml_metal_cv_init(void) {
     ggml_metal_cv_t res = calloc(1, sizeof(struct ggml_metal_cv));
 
@@ -49,31 +53,36 @@ ggml_metal_cv_t ggml_metal_cv_init(void) {
     return res;
 }
 
+// 释放常量值
 void ggml_metal_cv_free(ggml_metal_cv_t cv) {
     [cv->obj release];
     free(cv);
 }
 
+// 设置int16常量值
 void ggml_metal_cv_set_int16(ggml_metal_cv_t cv, int16_t value, int32_t idx) {
     [cv->obj setConstantValue:&value type:MTLDataTypeShort atIndex:idx];
 }
 
+// 设置int32常量值
 void ggml_metal_cv_set_int32(ggml_metal_cv_t cv, int32_t value, int32_t idx) {
     [cv->obj setConstantValue:&value type:MTLDataTypeInt atIndex:idx];
 }
 
+// 设置bool常量值
 void ggml_metal_cv_set_bool(ggml_metal_cv_t cv, bool value, int32_t idx) {
     [cv->obj setConstantValue:&value type:MTLDataTypeBool atIndex:idx];
 }
 
 //
-// MTLComputePipelineState wrapper
+// MTLComputePipelineState包装器
 //
 
 struct ggml_metal_pipeline {
     id<MTLComputePipelineState> obj;
 };
 
+// 初始化计算管道
 ggml_metal_pipeline_t ggml_metal_pipeline_init(void) {
     ggml_metal_pipeline_t res = calloc(1, sizeof(struct ggml_metal_pipeline));
 

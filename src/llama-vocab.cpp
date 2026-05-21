@@ -1,3 +1,6 @@
+// llama-vocab.cpp - LLaMA词汇表实现
+// 本文件实现了LLaMA模型的词汇表处理，包括分词器、词表管理和BPE等分词算法
+
 #include "llama-vocab.h"
 
 #include "ggml.h"
@@ -22,9 +25,10 @@
 #include <unordered_map>
 
 //
-// helpers
+// 辅助工具
 //
 
+// 朴素Trie树实现，用于高效的前缀匹配
 struct naive_trie {
     naive_trie() : has_value(false), value(0) {
     }

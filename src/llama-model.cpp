@@ -1,3 +1,6 @@
+// llama-model.cpp - LLaMA模型实现
+// 本文件实现了LLaMA模型的加载、初始化和推理功能
+
 #include "llama-model.h"
 
 #include "llama-arch.h"
@@ -34,6 +37,7 @@
 #include <string>
 #include <vector>
 
+// 根据架构类型创建对应的模型实例
 static llama_model * llama_model_mapping(llm_arch arch, const llama_model_params & params) {
     switch (arch) {
         case LLM_ARCH_LLAMA:

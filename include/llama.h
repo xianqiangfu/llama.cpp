@@ -1,3 +1,6 @@
+// llama.h - LLaMA C接口头文件
+// 本文件提供了LLaMA模型的C语言公共API接口，支持C和C++调用
+
 #ifndef LLAMA_H
 #define LLAMA_H
 
@@ -12,6 +15,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 
+// 共享库导入/导出宏定义
 #ifdef LLAMA_SHARED
 #    if defined(_WIN32) && !defined(__MINGW32__)
 #        ifdef LLAMA_BUILD
@@ -26,6 +30,7 @@
 #    define LLAMA_API
 #endif
 
+// 弃用函数标记宏
 #ifdef __GNUC__
 #    define DEPRECATED(func, hint) func __attribute__((deprecated(hint)))
 #elif defined(_MSC_VER)
@@ -34,17 +39,22 @@
 #    define DEPRECATED(func, hint) func
 #endif
 
+// 默认随机种子
 #define LLAMA_DEFAULT_SEED 0xFFFFFFFF
 
+// 空token
 #define LLAMA_TOKEN_NULL -1
 
+// 文件魔数
 #define LLAMA_FILE_MAGIC_GGLA 0x67676c61u // 'ggla'
 #define LLAMA_FILE_MAGIC_GGSN 0x6767736eu // 'ggsn'
 #define LLAMA_FILE_MAGIC_GGSQ 0x67677371u // 'ggsq'
 
+// 会话文件魔数和版本
 #define LLAMA_SESSION_MAGIC   LLAMA_FILE_MAGIC_GGSN
 #define LLAMA_SESSION_VERSION 9
 
+// 序列状态文件魔数和版本
 #define LLAMA_STATE_SEQ_MAGIC   LLAMA_FILE_MAGIC_GGSQ
 #define LLAMA_STATE_SEQ_VERSION 2
 
@@ -53,32 +63,35 @@ extern "C" {
 #endif
 
     //
-    // C interface
+    // C语言接口
     //
-    // TODO: show sample usage
+    // TODO: 添加使用示例
     //
 
-    struct llama_vocab;
-    struct llama_model;
-    struct llama_context;
-    struct llama_sampler;
+    struct llama_vocab;     // 词汇表结构
+    struct llama_model;     // 模型结构
+    struct llama_context;   // 推理上下文结构
+    struct llama_sampler;   // 采样器结构
 
     typedef struct llama_memory_i * llama_memory_t;
 
-    typedef int32_t llama_pos;
-    typedef int32_t llama_token;
-    typedef int32_t llama_seq_id;
+    // 类型定义
+    typedef int32_t llama_pos;     // 位置索引类型
+    typedef int32_t llama_token;   // token类型
+    typedef int32_t llama_seq_id;  // 序列ID类型
 
+    // 词汇表类型
     enum llama_vocab_type {
-        LLAMA_VOCAB_TYPE_NONE   = 0, // For models without vocab
-        LLAMA_VOCAB_TYPE_SPM    = 1, // LLaMA tokenizer based on byte-level BPE with byte fallback
-        LLAMA_VOCAB_TYPE_BPE    = 2, // GPT-2 tokenizer based on byte-level BPE
-        LLAMA_VOCAB_TYPE_WPM    = 3, // BERT tokenizer based on WordPiece
-        LLAMA_VOCAB_TYPE_UGM    = 4, // T5 tokenizer based on Unigram
-        LLAMA_VOCAB_TYPE_RWKV   = 5, // RWKV tokenizer based on greedy tokenization
-        LLAMA_VOCAB_TYPE_PLAMO2 = 6, // PLaMo-2 tokenizer based on Aho-Corasick with dynamic programming
+        LLAMA_VOCAB_TYPE_NONE   = 0, // 无词汇表的模型
+        LLAMA_VOCAB_TYPE_SPM    = 1, // 基于字节级BPE的LLaMA分词器，带字节回退
+        LLAMA_VOCAB_TYPE_BPE    = 2, // 基于字节级BPE的GPT-2分词器
+        LLAMA_VOCAB_TYPE_WPM    = 3, // 基于WordPiece的BERT分词器
+        LLAMA_VOCAB_TYPE_UGM    = 4, // 基于Unigram的T5分词器
+        LLAMA_VOCAB_TYPE_RWKV   = 5, // 基于贪婪分词的RWKV分词器
+        LLAMA_VOCAB_TYPE_PLAMO2 = 6, // 基于Aho-Corasick和动态规划的PLaMo-2分词器
     };
 
+    // RoPE类型
     enum llama_rope_type {
         LLAMA_ROPE_TYPE_NONE   = -1,
         LLAMA_ROPE_TYPE_NORM   = 0,
@@ -88,7 +101,8 @@ extern "C" {
         LLAMA_ROPE_TYPE_VISION = GGML_ROPE_TYPE_VISION,
     };
 
-    enum llama_token_type { //TODO: remove, required until per token attributes are available from GGUF file
+    // Token类型
+    enum llama_token_type { // TODO: 移除，在GGUF文件提供每个token的属性前保持需要
         LLAMA_TOKEN_TYPE_UNDEFINED    = 0,
         LLAMA_TOKEN_TYPE_NORMAL       = 1,
         LLAMA_TOKEN_TYPE_UNKNOWN      = 2,
@@ -98,12 +112,13 @@ extern "C" {
         LLAMA_TOKEN_TYPE_BYTE         = 6,
     };
 
+    // Token属性
     enum llama_token_attr {
         LLAMA_TOKEN_ATTR_UNDEFINED    = 0,
         LLAMA_TOKEN_ATTR_UNKNOWN      = 1 << 0,
         LLAMA_TOKEN_ATTR_UNUSED       = 1 << 1,
         LLAMA_TOKEN_ATTR_NORMAL       = 1 << 2,
-        LLAMA_TOKEN_ATTR_CONTROL      = 1 << 3,  // SPECIAL?
+        LLAMA_TOKEN_ATTR_CONTROL      = 1 << 3,  // 特殊标记?
         LLAMA_TOKEN_ATTR_USER_DEFINED = 1 << 4,
         LLAMA_TOKEN_ATTR_BYTE         = 1 << 5,
         LLAMA_TOKEN_ATTR_NORMALIZED   = 1 << 6,
@@ -112,7 +127,7 @@ extern "C" {
         LLAMA_TOKEN_ATTR_SINGLE_WORD  = 1 << 9,
     };
 
-    // model file types
+    // 模型文件类型（量化格式）
     enum llama_ftype {
         LLAMA_FTYPE_ALL_F32              = 0,
         LLAMA_FTYPE_MOSTLY_F16           = 1,  // except 1d tensors

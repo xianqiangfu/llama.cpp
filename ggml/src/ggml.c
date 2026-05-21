@@ -1,5 +1,8 @@
-#define _CRT_SECURE_NO_DEPRECATE // Disables "unsafe" warnings on Windows
-#define _USE_MATH_DEFINES // For M_PI on MSVC
+// ggml.c - GGML核心实现
+// 本文件实现了GGML（General Matrix Mathematics Library）的核心功能，包括张量操作、图构建和计算执行
+
+#define _CRT_SECURE_NO_DEPRECATE // 禁用Windows上的"不安全"警告
+#define _USE_MATH_DEFINES // 用于MSVC的M_PI定义
 
 #include "ggml-backend.h"
 #include "ggml-impl.h"
@@ -7,7 +10,7 @@
 #include "ggml-cpu.h"
 #include "ggml.h"
 
-// FIXME: required here for quantization functions
+// TODO: 这里需要用于量化函数
 #include "ggml-quants.h"
 
 #ifdef GGML_USE_CPU_HBM
@@ -15,7 +18,7 @@
 #endif
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
-#include <malloc.h> // using malloc.h with MSC/MINGW
+#include <malloc.h> // 在MSC/MINGW中使用malloc.h
 #elif !defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__OpenBSD__)
 #include <alloca.h>
 #endif
@@ -53,6 +56,7 @@
 
 #define UNUSED GGML_UNUSED
 
+// 获取下一个图唯一ID
 uint64_t ggml_graph_next_uid(void) {
 #ifdef _MSC_VER
 #if defined(_WIN32)

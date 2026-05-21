@@ -1,3 +1,6 @@
+// ggml-quants.c - GGML量化实现
+// 本文件实现了GGML的各种量化算法，用于将FP32/FP16权重转换为低精度格式以减少内存占用
+
 #define GGML_COMMON_IMPL_C
 #include "ggml-common.h"
 
@@ -10,9 +13,10 @@
 #include <string.h>
 #include <assert.h>
 #include <float.h>
-#include <stdlib.h> // for qsort
-#include <stdio.h>  // for GGML_ASSERT
+#include <stdlib.h> // 用于qsort
+#include <stdio.h>  // 用于GGML_ASSERT
 
+// 各种量化格式的最大精度
 #define GROUP_MAX_EPS 1e-15f
 #define GROUP_MAX_EPS_IQ3_XXS 1e-8f
 #define GROUP_MAX_EPS_IQ2_S 1e-8f
@@ -21,6 +25,7 @@
 
 #define UNUSED GGML_UNUSED
 
+// 查找最佳int8索引
 static inline int best_index_int8(int n, const int8_t * val, float x) {
     if (x <= val[0]) return 0;
     if (x >= val[n-1]) return n-1;

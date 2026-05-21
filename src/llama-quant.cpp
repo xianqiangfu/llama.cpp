@@ -1,3 +1,6 @@
+// llama-quant.cpp - LLaMA模型量化实现
+// 本文件实现了LLaMA模型的量化功能，用于将模型权重从FP16/F32转换为低精度格式以减少内存占用
+
 #include "llama-impl.h"
 #include "llama-model.h"
 #include "llama-model-loader.h"
@@ -13,15 +16,15 @@
 #include <thread>
 #include <unordered_map>
 
-// result of parsing --tensor-type option
-// (changes to this struct must be reflected in tools/quantize/quantize.cpp)
+// 解析 --tensor-type 选项的结果
+// (对此结构的更改必须在 tools/quantize/quantize.cpp 中体现)
 struct tensor_type_option {
     std::string name;
     ggml_type type = GGML_TYPE_COUNT;
 };
 
-// tensor categorization - used to avoid repeated string matching in quantization logic.
-// this is different from LLM_TN - we want broad categories, not specific tensor names per arch.
+// 张量分类 - 用于避免在量化逻辑中重复字符串匹配
+// 这与 LLM_TN 不同 - 我们需要广泛的类别，而不是每个架构的特定张量名称
 enum class tensor_category {
     TOKEN_EMBD,
     ATTENTION_Q,

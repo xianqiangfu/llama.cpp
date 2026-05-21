@@ -1,3 +1,6 @@
+// chat.cpp - 聊天功能实现
+// 本文件实现了LLaMA的聊天功能，包括对话管理、格式化和交互等
+
 #include "chat.h"
 
 #include "chat-auto-parser-helpers.h"
@@ -30,6 +33,7 @@
 
 using json = nlohmann::ordered_json;
 
+// 格式化时间
 static std::string format_time(const std::chrono::system_clock::time_point & now, const std::string & format) {
     auto               time       = std::chrono::system_clock::to_time_t(now);
     auto               local_time = *std::localtime(&time);

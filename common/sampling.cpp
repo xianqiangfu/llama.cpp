@@ -1,3 +1,6 @@
+// sampling.cpp - 采样参数和配置实现
+// 本文件实现了文本采样的参数管理和配置功能
+
 #include "sampling.h"
 
 #include "common.h"
@@ -15,8 +18,8 @@
 #include <unordered_map>
 #include <vector>
 
-// the ring buffer works similarly to std::deque, but with a fixed capacity
-// TODO: deduplicate with llama-impl.h
+// 环形缓冲区实现，类似于std::deque，但具有固定容量
+// TODO: 与 llama-impl.h 去重
 template<typename T>
 struct ring_buffer {
     ring_buffer(size_t cap) : capacity(cap), data(cap) {}

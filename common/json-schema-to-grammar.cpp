@@ -1,3 +1,6 @@
+// json-schema-to-grammar.cpp - JSON Schema转GBNF语法
+// 本文件实现了将JSON Schema转换为GBNF（GGML BNF）语法的功能，用于约束模型输出
+
 #include "json-schema-to-grammar.h"
 #include "common.h"
 
@@ -14,6 +17,7 @@
 
 using json = nlohmann::ordered_json;
 
+// 构建重复规则
 static std::string build_repetition(const std::string & item_rule, int min_items, int max_items, const std::string & separator_rule = "") {
     auto has_max = max_items != std::numeric_limits<int>::max();
 

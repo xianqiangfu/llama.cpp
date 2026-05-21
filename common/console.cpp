@@ -1,3 +1,6 @@
+// console.cpp - 控制台交互实现
+// 本文件实现了控制台的输入输出、颜色显示和交互功能
+
 #include "console.h"
 #include "log.h"
 #include <vector>
@@ -34,6 +37,7 @@
 #include <termios.h>
 #endif
 
+// ANSI颜色代码定义
 #define ANSI_COLOR_RED     "\x1b[31m"
 #define ANSI_COLOR_GREEN   "\x1b[32m"
 #define ANSI_COLOR_YELLOW  "\x1b[33m"
@@ -48,9 +52,8 @@ namespace console {
 
 #if defined (_WIN32)
     namespace {
-        // Use private-use unicode values to represent special keys that are not reported
-        // as characters (e.g. arrows on Windows). These values should never clash with
-        // real input and let the rest of the code handle navigation uniformly.
+        // 使用私有unicode值表示不作为字符报告的特殊键（如Windows上的箭头键）
+        // 这些值永远不会与真实输入冲突，让其余代码统一处理导航
         static constexpr char32_t KEY_ARROW_LEFT       = 0xE000;
         static constexpr char32_t KEY_ARROW_RIGHT      = 0xE001;
         static constexpr char32_t KEY_ARROW_UP         = 0xE002;
@@ -63,7 +66,7 @@ namespace console {
     }
 
     //
-    // Console state
+    // 控制台状态
     //
 #endif
 

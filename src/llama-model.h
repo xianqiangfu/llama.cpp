@@ -1,3 +1,6 @@
+// llama-model.h - LLaMA模型头文件
+// 本文件定义了LLaMA模型的核心数据结构和接口，包括模型类型、参数和操作方法
+
 #pragma once
 
 #include "llama.h"
@@ -18,7 +21,7 @@ struct llama_cparams;
 struct llama_ubatch;
 struct llama_model_loader;
 
-// available models
+// 可用的模型类型
 enum llm_type {
     LLM_TYPE_UNKNOWN,
     LLM_TYPE_14M,

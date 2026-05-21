@@ -1,3 +1,6 @@
+// quants.c - GGML CPU量化实现
+// 本文件实现了GGML CPU后端的量化功能，包括各种量化格式的转换
+
 #define GGML_COMMON_IMPL_C
 #include "ggml-common.h"
 
@@ -11,9 +14,10 @@
 #include <string.h>
 #include <assert.h>
 #include <float.h>
-#include <stdlib.h> // for qsort
-#include <stdio.h>  // for GGML_ASSERT
+#include <stdlib.h> // 用于qsort
+#include <stdio.h>  // 用于GGML_ASSERT
 
+// 各种量化格式的最大精度
 #define GROUP_MAX_EPS 1e-15f
 #define GROUP_MAX_EPS_IQ3_XXS 1e-8f
 #define GROUP_MAX_EPS_IQ2_S 1e-8f
@@ -22,59 +26,68 @@
 
 #define UNUSED GGML_UNUSED
 
+// Q1_0量化
 void quantize_row_q1_0(const float * GGML_RESTRICT x, void * GGML_RESTRICT y, int64_t k) {
     quantize_row_q1_0_ref(x, y, k);
 }
 
+// Q4_0量化
 void quantize_row_q4_0(const float * GGML_RESTRICT x, void * GGML_RESTRICT y, int64_t k) {
     quantize_row_q4_0_ref(x, y, k);
 }
 
+// Q4_1量化
 void quantize_row_q4_1(const float * GGML_RESTRICT x, void * GGML_RESTRICT y, int64_t k) {
     quantize_row_q4_1_ref(x, y, k);
 }
 
+// Q5_0量化
 void quantize_row_q5_0(const float * GGML_RESTRICT x, void * GGML_RESTRICT y, int64_t k) {
     quantize_row_q5_0_ref(x, y, k);
 }
 
+// Q5_1量化
 void quantize_row_q5_1(const float * GGML_RESTRICT x, void * GGML_RESTRICT y, int64_t k) {
     quantize_row_q5_1_ref(x, y, k);
 }
 
+// Q8_0通用量化
 void quantize_row_q8_0_generic(const float * GGML_RESTRICT x, void * GGML_RESTRICT y, int64_t k) {
     quantize_row_q8_0_ref(x, y, k);
 }
 
+// Q8_1通用量化
 void quantize_row_q8_1_generic(const float * GGML_RESTRICT x, void * GGML_RESTRICT y, int64_t k) {
     quantize_row_q8_1_ref(x, y, k);
 }
 
+// MXFP4量化
 void quantize_row_mxfp4(const float * GGML_RESTRICT x, void * GGML_RESTRICT y, int64_t k) {
     quantize_row_mxfp4_ref(x, y, k);
 }
 
+// NVFP4量化
 void quantize_row_nvfp4(const float * GGML_RESTRICT x, void * GGML_RESTRICT y, int64_t k) {
     quantize_row_nvfp4_ref(x, y, k);
 }
 
 //
-// 2-6 bit quantization in super-blocks
+// 超级块中的2-6位量化
 //
 
-//========================- 2-bit (de)-quantization
+//========================- 2位（反）量化
 
 void quantize_row_q2_K(const float * GGML_RESTRICT x, void * GGML_RESTRICT vy, int64_t k) {
     quantize_row_q2_K_ref(x, vy, k);
 }
 
-//========================= 3-bit (de)-quantization
+//========================= 3位（反）量化
 
 void quantize_row_q3_K(const float * GGML_RESTRICT x, void * GGML_RESTRICT vy, int64_t k) {
     quantize_row_q3_K_ref(x, vy, k);
 }
 
-// ====================== 4-bit (de)-quantization
+// ====================== 4位（反）量化
 
 void quantize_row_q4_K(const float * GGML_RESTRICT x, void * GGML_RESTRICT vy, int64_t k) {
     assert(k % QK_K == 0);

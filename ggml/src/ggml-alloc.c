@@ -1,3 +1,6 @@
+// ggml-alloc.c - GGML内存分配器实现
+// 本文件实现了GGML的内存分配器，用于管理张量的内存分配和释放
+
 #include "ggml-alloc.h"
 #include "ggml-backend-impl.h"
 #include "ggml.h"
@@ -18,7 +21,7 @@
 //#define AT_PRINTF(...) GGML_LOG_DEBUG(__VA_ARGS__)
 #define AT_PRINTF(...)
 
-// ops that return true for this function must not use restrict pointers for their backend implementations
+// 返回true的操作必须在其后端实现中使用非限制指针
 bool ggml_op_can_inplace(enum ggml_op op) {
     switch (op) {
         case GGML_OP_FILL:

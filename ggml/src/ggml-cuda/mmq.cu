@@ -1,8 +1,12 @@
+// mmq.cu - 量化矩阵乘法（Mixed Matrix Quantization）CUDA实现
+// 本文件实现了量化矩阵乘法的CUDA kernel，用于加速量化模型的推理
+
 #include "common.cuh"
 #include "mmq.cuh"
 #include "quantize.cuh"
 #include "mmid.cuh"
 
+// 根据量化类型切换矩阵乘法kernel
 static void ggml_cuda_mul_mat_q_switch_type(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream) {
     switch (args.type_x) {
         case GGML_TYPE_Q1_0:

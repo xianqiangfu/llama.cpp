@@ -1,5 +1,9 @@
+// llama-memory.cpp - LLaMA记忆管理实现
+// 本文件实现了LLaMA模型的记忆管理功能，包括记忆状态管理和记忆组合等
+
 #include "llama-memory.h"
 
+// 组合记忆状态
 llama_memory_status llama_memory_status_combine(llama_memory_status s0, llama_memory_status s1) {
     bool has_update = false;
 

@@ -1,3 +1,6 @@
+// llama-context.cpp - LLaMA上下文实现
+// 本文件实现了LLaMA模型的推理上下文，负责管理推理状态、图构建和执行
+
 #include "llama-context.h"
 
 #include "ggml.h"
@@ -19,9 +22,10 @@
 #include <stdexcept>
 
 //
-// llama_context
+// llama_context - 推理上下文管理
 //
 
+// 将上下文类型转换为图类型
 static llm_graph_type ctx_type_to_graph_type(llama_context_type ctx_type) {
     switch (ctx_type) {
         case LLAMA_CONTEXT_TYPE_DEFAULT: return LLM_GRAPH_TYPE_DEFAULT;

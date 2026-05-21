@@ -1,3 +1,6 @@
+// llama-sampler.cpp - LLaMA采样器实现
+// 本文件实现了LLaMA模型的文本采样功能，包括各种采样策略（贪婪采样、温度采样、Top-K、Top-P等）
+
 #include "llama-sampler.h"
 
 #include "llama-impl.h"
@@ -20,7 +23,7 @@
 #include <unordered_map>
 #include <stdexcept>
 
-// the ring buffer works similarly to std::deque, but with a fixed capacity
+// 环形缓冲区实现，类似于std::deque，但具有固定容量
 template<typename T>
 struct ring_buffer {
     ring_buffer(size_t cap) : capacity(cap), data(cap) {}
