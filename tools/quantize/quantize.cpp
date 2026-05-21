@@ -1,3 +1,19 @@
+/**
+ * @file quantize.cpp
+ * @brief llama.cpp 模型量化工具
+ *
+ * 本文件实现了模型量化工具，支持将浮点模型转换为各种量化格式以减少内存使用。
+ * 支持的量化格式包括：
+ * - Q1_0 到 Q8_0：各种比特率量化
+ * - IQ 系列：优化的非线性量化
+ * - K 系列：混合精度量化
+ * - TQ 系列：三元化量化
+ * - MXFP4：混合专家（MoE）量化
+ *
+ * @author llama.cpp contributors
+ * @copyright MIT License
+ */
+
 #include "llama.h"
 
 #include "build-info.h"
@@ -18,19 +34,31 @@
 #include <fstream>
 #include <filesystem>
 
+// ========== 数据结构 ==========
+
+/**
+ * @brief --tensor-type 选项的解析结果
+ * 对此结构体的更改也必须反映在 src/llama-quant.cpp 中
+ */
 // result of parsing --tensor-type option
 // changes to this struct must also be reflected in src/llama-quant.cpp
 struct tensor_type_option {
-    std::string name;
-    ggml_type type = GGML_TYPE_COUNT;
+    std::string name;     // 张量名称
+    ggml_type type = GGML_TYPE_COUNT;  // 量化类型
 };
 
+/**
+ * @brief 量化选项描述
+ */
 struct quant_option {
-    std::string name;
-    llama_ftype ftype;
-    std::string desc;
+    std::string name;      // 量化类型名称
+    llama_ftype ftype;     // 文件类型
+    std::string desc;      // 描述（包含文件大小和困惑度影响）
 };
 
+// ========== 常量定义 ==========
+
+// 所有支持的量化选项及其描述
 static const std::vector<quant_option> QUANT_OPTIONS = {
     { "Q1_0",     LLAMA_FTYPE_MOSTLY_Q1_0,     " 1.125 bpw quantization",           },
     { "Q4_0",     LLAMA_FTYPE_MOSTLY_Q4_0,     " 4.34G, +0.4685 ppl @ Llama-3-8B",  },
@@ -69,20 +97,29 @@ static const std::vector<quant_option> QUANT_OPTIONS = {
     { "F16",      LLAMA_FTYPE_MOSTLY_F16,      "14.00G, +0.0020 ppl @ Mistral-7B",  },
     { "BF16",     LLAMA_FTYPE_MOSTLY_BF16,     "14.00G, -0.0050 ppl @ Mistral-7B",  },
     { "F32",      LLAMA_FTYPE_ALL_F32,         "26.00G              @ 7B",          },
-    // Note: Ensure COPY comes after F32 to avoid ftype 0 from matching.
+    // 注意：确保 COPY 在 F32 之后，以避免 ftype 0 匹配。
     { "COPY",     LLAMA_FTYPE_ALL_F32,         "only copy tensors, no quantizing",  },
 };
 
-static const char * const LLM_KV_QUANTIZE_IMATRIX_FILE       = "quantize.imatrix.file";
-static const char * const LLM_KV_QUANTIZE_IMATRIX_DATASET    = "quantize.imatrix.dataset";
-static const char * const LLM_KV_QUANTIZE_IMATRIX_N_ENTRIES  = "quantize.imatrix.entries_count";
-static const char * const LLM_KV_QUANTIZE_IMATRIX_N_CHUNKS   = "quantize.imatrix.chunks_count";
+// GGUF 键值对：量化相关信息
+static const char * const LLM_KV_QUANTIZE_IMATRIX_FILE       = "quantize.imatrix.file";      // 重要性矩阵文件
+static const char * const LLM_KV_QUANTIZE_IMATRIX_DATASET    = "quantize.imatrix.dataset";   // 重要性矩阵数据集
+static const char * const LLM_KV_QUANTIZE_IMATRIX_N_ENTRIES  = "quantize.imatrix.entries_count"; // 重要性矩阵条目数
+static const char * const LLM_KV_QUANTIZE_IMATRIX_N_CHUNKS   = "quantize.imatrix.chunks_count";  // 重要性矩阵块数
 
-// TODO: share with imatrix.cpp
-static const char * const LLM_KV_IMATRIX_DATASETS    = "imatrix.datasets";
-static const char * const LLM_KV_IMATRIX_CHUNK_COUNT = "imatrix.chunk_count";
-static const char * const LLM_KV_IMATRIX_CHUNK_SIZE  = "imatrix.chunk_size";
+// TODO: 与 imatrix.cpp 共享
+static const char * const LLM_KV_IMATRIX_DATASETS    = "imatrix.datasets";       // 重要性矩阵数据集
+static const char * const LLM_KV_IMATRIX_CHUNK_COUNT = "imatrix.chunk_count";   // 重要性矩阵块计数
+static const char * const LLM_KV_IMATRIX_CHUNK_SIZE  = "imatrix.chunk_size";    // 重要性矩阵块大小
 
+// ========== 工具函数 ==========
+
+/**
+ * @brief 不区分大小写的字符串比较
+ * @param a 字符串 a
+ * @param b 字符串 b
+ * @return 如果相等返回 true
+ */
 static bool striequals(const char * a, const char * b) {
     while (*a && *b) {
         if (std::tolower(*a) != std::tolower(*b)) {
@@ -93,6 +130,13 @@ static bool striequals(const char * a, const char * b) {
     return *a == *b;
 }
 
+/**
+ * @brief 尝试解析量化类型字符串
+ * @param ftype_str_in 输入的量化类型字符串
+ * @param ftype 输出的文件类型
+ * @param ftype_str_out 输出的规范化类型字符串
+ * @return 是否解析成功
+ */
 static bool try_parse_ftype(const std::string & ftype_str_in, llama_ftype & ftype, std::string & ftype_str_out) {
     std::string ftype_str;
 

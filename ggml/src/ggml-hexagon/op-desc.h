@@ -1,3 +1,18 @@
+/**
+ * @file op-desc.h
+ * @brief 操作描述符 - 用于格式化张量操作信息
+ *
+ * 本文件定义了 op_desc 结构体，用于格式化和显示张量操作的各种属性：
+ * - 张量维度
+ * - 步长
+ * - 数据类型
+ * - 缓冲区信息
+ * - 张量名称
+ *
+ * @author llama.cpp contributors
+ * @copyright MIT License
+ */
+
 #ifndef OP_DESC_H
 #define OP_DESC_H
 
@@ -8,13 +23,25 @@
 #include <string>
 #include <stdio.h>
 
+/**
+ * @brief 操作描述符结构体
+ *
+ * 用于存储和格式化张量操作的详细信息，包括输入输出张量的
+ * 维度、步长、类型、缓冲区和名称等信息。
+ */
 struct op_desc {
-    char strides[64 * GGML_MAX_SRC];
-    char dims[64 * GGML_MAX_SRC];
-    char types[16 * GGML_MAX_SRC];
-    char buffs[64 * GGML_MAX_SRC];
-    char names[64 * GGML_MAX_SRC];
+    char strides[64 * GGML_MAX_SRC];  // 步长信息字符串
+    char dims[64 * GGML_MAX_SRC];     // 维度信息字符串
+    char types[16 * GGML_MAX_SRC];    // 数据类型字符串
+    char buffs[64 * GGML_MAX_SRC];    // 缓冲区信息字符串
+    char names[64 * GGML_MAX_SRC];    // 张量名称字符串
 
+    /**
+     * @brief 格式化张量的维度信息
+     * @param str 输出字符串缓冲区
+     * @param t 张量指针
+     * @return 写入的字符数
+     */
     int format_tensor_dims(char * str, const struct ggml_tensor * t) {
         if (t->ne[2] == 1 && t->ne[3] == 1) {
             return sprintf(str, "%d:%d", (int) t->ne[0], (int) t->ne[1]);
@@ -23,6 +50,12 @@ struct op_desc {
         }
     }
 
+    /**
+     * @brief 格式化操作的输入和输出维度信息
+     * 格式为 "src0 x src1 -> dst"
+     * @param str 输出字符串缓冲区
+     * @param t 张量指针
+     */
     void format_op_dims(char * str, const struct ggml_tensor * t) {
         char * p = str;
 
@@ -45,6 +78,12 @@ struct op_desc {
         p += sprintf(p, "%s", self);
     }
 
+    /**
+     * @brief 格式化张量的步长信息
+     * @param str 输出字符串缓冲区
+     * @param t 张量指针
+     * @return 写入的字符数
+     */
     int format_tensor_strides(char * str, const struct ggml_tensor * t) {
         const char * c = ggml_is_contiguous(t) ? "" : "!";
 
@@ -55,6 +94,11 @@ struct op_desc {
         }
     }
 
+    /**
+     * @brief 格式化操作的输入和输出步长信息
+     * @param str 输出字符串缓冲区
+     * @param t 张量指针
+     */
     void format_op_strides(char * str, const struct ggml_tensor * t) {
         char * p = str;
 
@@ -77,6 +121,11 @@ struct op_desc {
         p += sprintf(p, "%s", self);
     }
 
+    /**
+     * @brief 格式化操作的输入和输出数据类型信息
+     * @param str 输出字符串缓冲区
+     * @param t 张量指针
+     */
     void format_op_types(char * str, const struct ggml_tensor * t) {
         char * p = str;
 
@@ -95,6 +144,11 @@ struct op_desc {
         p += sprintf(p, "%s", ggml_type_name(t->type));
     }
 
+    /**
+     * @brief 获取张量的缓冲区名称
+     * @param t 张量指针
+     * @return 缓冲区名称，如果没有缓冲区则返回 "NONE"
+     */
     const char * tensor_buff_name(const struct ggml_tensor * t) {
         if (t->buffer) {
             return ggml_backend_buffer_name(t->buffer);
@@ -102,6 +156,11 @@ struct op_desc {
         return "NONE";
     }
 
+    /**
+     * @brief 格式化操作的输入和输出缓冲区信息
+     * @param str 输出字符串缓冲区
+     * @param t 张量指针
+     */
     void format_op_buffs(char * str, const struct ggml_tensor * t) {
         char * p = str;
 
@@ -120,6 +179,11 @@ struct op_desc {
         p += sprintf(p, "%s", tensor_buff_name(t));
     }
 
+    /**
+     * @brief 格式化操作的输入和输出张量名称信息
+     * @param str 输出字符串缓冲区
+     * @param t 张量指针
+     */
     void format_op_names(char * str, const struct ggml_tensor * t) {
         char * p = str;
 
@@ -138,6 +202,10 @@ struct op_desc {
         p += sprintf(p, "%s", t->name);
     }
 
+    /**
+     * @brief 格式化所有操作信息
+     * @param op 张量操作
+     */
     void format(const ggml_tensor * op) {
         format_op_dims(dims, op);
         format_op_strides(strides, op);
@@ -146,7 +214,14 @@ struct op_desc {
         format_op_names(names, op);
     }
 
+    /**
+     * @brief 默认构造函数
+     */
     op_desc() {}
+    /**
+     * @brief 从张量操作构造描述符
+     * @param op 张量操作
+     */
     op_desc(const ggml_tensor * op) { format(op); }
 };
 

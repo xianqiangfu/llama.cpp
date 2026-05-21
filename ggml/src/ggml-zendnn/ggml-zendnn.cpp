@@ -1,3 +1,6 @@
+// GGML ZenDNN (Zen Deep Neural Network) 后端实现
+// 提供基于 ZenDNN 的深度学习推理支持
+// 主要面向 AMD Zen 架构 CPU
 #include "ggml-zendnn.h"
 
 #include "ggml-backend-impl.h"
@@ -7,10 +10,11 @@
 #include <cstring>
 
 
+// ZenDNN 后端上下文结构
 struct ggml_backend_zendnn_context {
-    int n_threads = GGML_DEFAULT_N_THREADS;
-    std::unique_ptr<char[]> work_data;
-    size_t work_size = 0;
+    int n_threads = GGML_DEFAULT_N_THREADS; // 线程数
+    std::unique_ptr<char[]> work_data;      // 工作数据缓冲区
+    size_t work_size = 0;                   // 工作数据大小
 };
 
 template<typename T>
@@ -25,16 +29,16 @@ zendnnl::common::data_type_t ggml_to_zendnn_type() {
 }
 
 /**
- * ZenDNN matmul: computes C = B * A.
+ * ZenDNN 矩阵乘法：计算 C = B * A
  *
- * - A: weights, shape (k, m), column-major (each column is a weight vector for one output).
- * - B: input, shape (n, k), row-major (each row is an input sample).
- * - C: output, shape (n, m), row-major.
+ * - A：权重，形状 (k, m)，列主序（每列是一个输出的权重向量）
+ * - B：输入，形状 (n, k)，行主序（每行是一个输入样本）
+ * - C：输出，形状 (n, m)，行主序
  *
- * Dimensions:
- *   m = output features (columns of C, columns of A)
- *   n = batch size      (rows of C, rows of B)
- *   k = inner dimension (columns of B, rows of A)
+ * 维度：
+ *   m = 输出特征（C 的列数，A 的列数）
+ *   n = 批次大小（C 的行数，B 的行数）
+ *   k = 内部维度（B 的列数，A 的行数）
  */
 template <typename TA, typename TB, typename TC>
 static bool ggml_zendnn_matmul(ggml_backend_zendnn_context * ctx, int64_t m, int64_t n, int64_t k,
@@ -49,17 +53,17 @@ static bool ggml_zendnn_matmul(ggml_backend_zendnn_context * ctx, int64_t m, int
 
     zendnnl::lowoha::matmul::matmul_batch_params_t batch_params;
     zendnnl::error_handling::status_t status = zendnnl::lowoha::matmul::matmul_direct(
-        'r', false, true,   // row-major, don't transpose B, transpose A (because it's column-major)
-        n,                  // M: rows of B and C
-        m,                  // N: cols of A^T and C
-        k,                  // K: cols of B, rows of A
+        'r', false, true,   // 行主序，不转置 B，转置 A（因为它是列主序）
+        n,                  // M：B 和 C 的行数
+        m,                  // N：A^T 和 C 的列数
+        k,                  // K：B 的列数，A 的行数
         1.0f,               // alpha
         B, ldb,             // src: B[n,k]
-        A, lda,             // weight: A[k,m] column-major (transposed)
+        A, lda,             // weight: A[k,m] 列主序（转置）
         nullptr,            // bias
         0.0f,               // beta
         C, ldc,             // output C[n,m]
-        true,               // is_weights_const
+        true,               // is_weights_const（权重是常数）
         batch_params,       // batch_params
         params              // params
     );
@@ -71,6 +75,7 @@ static bool ggml_zendnn_matmul(ggml_backend_zendnn_context * ctx, int64_t m, int
     return true;
 }
 
+// ZenDNN 单精度通用矩阵乘法
 static bool ggml_zendnn_sgemm(ggml_backend_zendnn_context * ctx, int64_t m, int64_t n, int64_t k,
                               const void * A, int64_t lda, const void * B, int64_t ldb, void * C,
                               int64_t ldc, int Atype, int Btype, int Ctype) {
@@ -82,7 +87,7 @@ static bool ggml_zendnn_sgemm(ggml_backend_zendnn_context * ctx, int64_t m, int6
     assert(ldb >= k);
     assert(ldc >= m);
 
-    // categorize types
+    // 分类类型
     switch (Atype) {
         case GGML_TYPE_F32:
             if (Btype != GGML_TYPE_F32 || Ctype != GGML_TYPE_F32)

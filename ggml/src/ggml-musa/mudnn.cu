@@ -1,3 +1,6 @@
+// GGML MUSA (Moore Threads Unified Software Architecture) 后端实现
+// 提供基于摩尔线程 MUSA 框架的 GPU 加速支持
+// 主要面向摩尔线程 S 系列 GPU
 #include <mutex>
 #include <mudnn.h>
 
@@ -5,7 +8,7 @@
 
 namespace mudnn = musa::dnn;
 
-// Returns a human-readable error string for mudnn::Status
+// 返回 mudnn::Status 的人类可读错误字符串
 const char* mudnnGetErrorString(mudnn::Status err) {
     switch (err) {
         case mudnn::Status::SUCCESS:
@@ -29,11 +32,11 @@ const char* mudnnGetErrorString(mudnn::Status err) {
     }
 }
 
-// Error checking macro for MUDNN calls
+// MUDNN 调用的错误检查宏
 #define MUDNN_CHECK(err) CUDA_CHECK_GEN(err, mudnn::Status::SUCCESS, mudnnGetErrorString)
 
 namespace {
-    // Thread-safe cache for mudnn::Handle objects per device
+    // 每个设备的 mudnn::Handle 对象的线程安全缓存
     std::unordered_map<int, std::unique_ptr<mudnn::Handle>> handle_cache;
     std::mutex handle_cache_mutex;
 
@@ -50,7 +53,7 @@ namespace {
     }
 }
 
-// Extracts dimensions and strides from a ggml_tensor
+// 从 ggml_tensor 提取维度和步长
 int get_ggml_dims_and_strides(const ggml_tensor* tensor,
                               std::vector<int64_t>& dims,
                               std::vector<int64_t>& strides) {
@@ -67,7 +70,7 @@ int get_ggml_dims_and_strides(const ggml_tensor* tensor,
     return ndims;
 }
 
-// Converts ggml_type to mudnn::Tensor::Type
+// 将 ggml_type 转换为 mudnn::Tensor::Type
 mudnn::Tensor::Type ggml_type_to_mudnn_type(ggml_type type) {
     switch (type) {
         case GGML_TYPE_F32:
@@ -81,10 +84,10 @@ mudnn::Tensor::Type ggml_type_to_mudnn_type(ggml_type type) {
             MUDNN_CHECK(mudnn::Status::NOT_SUPPORTED);
     }
 
-    return mudnn::Tensor::Type::FLOAT; // Default fallback
+    return mudnn::Tensor::Type::FLOAT; // 默认回退
 }
 
-// Asynchronous memory copy using mudnn::Unary::IDENTITY
+// 使用 mudnn::Unary::IDENTITY 进行异步内存复制
 musaError_t mudnnMemcpyAsync(ggml_backend_cuda_context& ctx, const ggml_tensor* dst, const ggml_tensor* src) {
     mudnn::Tensor tensor_dst, tensor_src;
 

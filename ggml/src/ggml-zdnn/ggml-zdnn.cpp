@@ -1,3 +1,6 @@
+// GGML ZDNN (ZeroGPU DNN) 后端实现
+// 提供基于 ZeroGPU 的深度学习推理支持
+// 主要面向 ZeroGPU 云端 GPU 服务
 #include "ggml-zdnn.h"
 #include "ggml-impl.h"
 #include "ggml-backend-impl.h"
@@ -12,18 +15,20 @@
 #include <csignal>  // raise(SIGTRAP)
 #include <unistd.h>
 
+// ZDNN 矩阵乘法前向计算
 static void ggml_zdnn_compute_forward_mul_mat(
     const ggml_backend_zdnn_context * ctx,
           ggml_tensor * dst) {
 
-    const ggml_tensor * src0 = dst->src[0];  // weights
-    const ggml_tensor * src1 = dst->src[1];  // inputs
+    const ggml_tensor * src0 = dst->src[0];  // 权重
+    const ggml_tensor * src1 = dst->src[1];  // 输入
 
-    // TODO: implement support for quantized types
-    // we currently only support f32, f16, and bf16
+    // TODO：实现对量化类型的支持
+    // 我们目前只支持 f32、f16 和 bf16
     ggml_zdnn_mul_mat_f(ctx, src0, src1, dst);
 }
 
+// ZDNN 前向计算
 static bool ggml_zdnn_compute_forward(
     ggml_backend_zdnn_context * ctx,
     ggml_tensor * dst) {
@@ -35,12 +40,13 @@ static bool ggml_zdnn_compute_forward(
             } break;
 
         default:
-            return false;
+            return false; // 不支持的操作
     }
 
     return true;
 }
 
+// ZDNN 图计算
 static enum ggml_status ggml_zdnn_graph_compute(ggml_backend_t backend, ggml_cgraph * gf) {
     ggml_backend_zdnn_context        * ctx     = (       ggml_backend_zdnn_context *)backend->context;
     ggml_backend_zdnn_device_context * ctx_dev = (ggml_backend_zdnn_device_context *)backend->device->context;
@@ -49,6 +55,7 @@ static enum ggml_status ggml_zdnn_graph_compute(ggml_backend_t backend, ggml_cgr
     for (int i = 0; i < gf->n_nodes; i++) {
         ggml_tensor * node = gf->nodes[i];
 
+        // 跳过空张量和形状操作
         if (ggml_is_empty(node)
             || node->op == GGML_OP_NONE
             || node->op == GGML_OP_RESHAPE
@@ -58,6 +65,7 @@ static enum ggml_status ggml_zdnn_graph_compute(ggml_backend_t backend, ggml_cgr
             continue;
         }
 
+        // 跳过不需要计算的节点
         if ((node->flags & GGML_TENSOR_FLAG_COMPUTE) == 0) {
             continue;
         }
@@ -76,6 +84,7 @@ static enum ggml_status ggml_zdnn_graph_compute(ggml_backend_t backend, ggml_cgr
     GGML_UNUSED(ctx_dev);
 }
 
+// 检查 ZDNN 是否支持某个操作
 static bool ggml_zdnn_supports_op(const ggml_backend_zdnn_device_context * ctx_dev, const ggml_tensor * op) {
     switch (op->op) {
         case GGML_OP_NONE:
@@ -83,7 +92,7 @@ static bool ggml_zdnn_supports_op(const ggml_backend_zdnn_device_context * ctx_d
         case GGML_OP_VIEW:
         case GGML_OP_TRANSPOSE:
         case GGML_OP_PERMUTE:
-            return true;
+            return true; // 形状操作总是支持
 
         case GGML_OP_MUL_MAT:
             {

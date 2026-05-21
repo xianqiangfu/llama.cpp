@@ -10,6 +10,10 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 
+// GGML SYCL 后端实现
+// 提供基于 SYCL (SYCL - oneAPI 标准) 的跨平台 GPU 加速支持
+// 主要面向 Intel GPU 和其他支持 SYCL 的设备
+
 #include <algorithm>
 #include <assert.h>
 #include <atomic>
@@ -65,21 +69,24 @@
 #include "ggml-sycl/solve_tri.hpp"
 #include "ggml-sycl/gated_delta_net.hpp"
 
-static bool g_sycl_loaded = false;
-int g_ggml_sycl_debug = 0;
-int g_ggml_sycl_disable_optimize = 0;
-int g_ggml_sycl_disable_graph = 0;
-int g_ggml_sycl_disable_dnn = 0;
-int g_ggml_sycl_prioritize_dmmv = 0;
-int g_ggml_sycl_use_async_mem_op = 0;
-int g_ggml_sycl_use_async_mem_op_requested = 1;
-int g_ggml_sycl_enable_level_zero = 0;
-int g_ggml_sycl_enable_flash_attention = 1;
+// 全局 SYCL 配置标志
+static bool g_sycl_loaded = false;              // SYCL 是否已加载
+int g_ggml_sycl_debug = 0;                     // 调试标志
+int g_ggml_sycl_disable_optimize = 0;          // 禁用优化
+int g_ggml_sycl_disable_graph = 0;             // 禁用图优化
+int g_ggml_sycl_disable_dnn = 0;               // 禁用 DNN 优化
+int g_ggml_sycl_prioritize_dmmv = 0;           // 优先使用 DMMV（解量化矩阵向量乘法）
+int g_ggml_sycl_use_async_mem_op = 0;          // 使用异步内存操作
+int g_ggml_sycl_use_async_mem_op_requested = 1; // 请求使用异步内存操作
+int g_ggml_sycl_enable_level_zero = 0;         // 启用 Level Zero 后端
+int g_ggml_sycl_enable_flash_attention = 1;    // 启用闪存注意力
 
 
+// 初始化 SYCL 设备
 static ggml_sycl_device_info ggml_sycl_init() {
     ggml_sycl_device_info info = {};
 
+    // 获取可用设备数量
     info.device_count = dpct::dev_mgr::instance().device_count();
     if (info.device_count == 0) {
         GGML_LOG_ERROR("%s: failed to initialize: %s\n", GGML_SYCL_NAME, __func__);
@@ -89,7 +96,7 @@ static ggml_sycl_device_info ggml_sycl_init() {
     GGML_ASSERT(info.device_count <= GGML_SYCL_MAX_DEVICES);
 
     int64_t total_vram = 0;
-/* This is a bit misleading;  reserved for later */
+/* 这有点误导；留待以后使用 */
 // #if defined(SYCL_USE_XMX)
 //     GGML_LOG_INFO("%s: SYCL_USE_XMX: yes\n", __func__);
 // #else

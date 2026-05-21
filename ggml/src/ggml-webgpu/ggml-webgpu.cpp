@@ -1,3 +1,21 @@
+/**
+ * @file ggml-webgpu.cpp
+ * @brief WebGPU 后端实现
+ *
+ * 本文件实现了 llama.cpp 在 WebGPU 上的后端支持，利用浏览器和现代图形 API 进行计算加速。
+ * 主要功能包括：
+ * - WebGPU 设备初始化和管理
+ * - 计算管道和着色器管理
+ * - 张量缓冲区的分配和同步
+ * - 并行工作组调度
+ * - 性能分析和调试支持
+ *
+ * 注意：使用 ClangFormat 格式化此文件。
+ *
+ * @author llama.cpp contributors
+ * @copyright MIT License
+ */
+
 /*
     WebGPU backend implementation.
     Note: Use ClangFormat to format this file.

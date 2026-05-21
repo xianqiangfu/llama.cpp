@@ -1,3 +1,17 @@
+/**
+ * @file virtgpu.cpp
+ * @brief VirtIO GPU 后端实现
+ *
+ * 本文件实现了 VirtIO GPU 后端的核心功能，包括：
+ * - VirtGPU 设备的打开和初始化
+ * - APIR 协议握手和库加载
+ * - 共享内存管理
+ * - 远程调用处理
+ *
+ * @author llama.cpp contributors
+ * @copyright MIT License
+ */
+
 #include "virtgpu.h"
 #include "ggml-remoting.h"
 
@@ -7,6 +21,8 @@
 #include <cassert>
 #include <cerrno>
 #include <cstdlib>
+
+// ========== 内部函数声明 ==========
 
 static virt_gpu_result_t virtgpu_open_device(virtgpu * gpu, const drmDevicePtr dev);
 static virt_gpu_result_t virtgpu_open(virtgpu * gpu);
@@ -25,9 +41,17 @@ static void     virtgpu_init_renderer_info(virtgpu * gpu);
 
 static void log_call_duration(long long call_duration_ns, const char * name);
 
-const uint64_t APIR_HANDSHAKE_MAX_WAIT_MS   = 2 * 1000;   // 2s
-const uint64_t APIR_LOADLIBRARY_MAX_WAIT_MS = 60 * 1000;  // 60s
+// ========== 超时配置 ==========
 
+const uint64_t APIR_HANDSHAKE_MAX_WAIT_MS   = 2 * 1000;   // 握手最大等待时间：2秒
+const uint64_t APIR_LOADLIBRARY_MAX_WAIT_MS = 60 * 1000;  // 库加载最大等待时间：60秒
+
+/**
+ * @brief 执行与 virglrenderer 的握手协议
+ * 交换协议版本信息以确认兼容性
+ * @param gpu VirtGPU 设备指针
+ * @return 0 表示成功，非 0 表示失败
+ */
 static int virtgpu_handshake(virtgpu * gpu) {
     apir_encoder * encoder;
     apir_decoder * decoder;
@@ -91,6 +115,12 @@ static int virtgpu_handshake(virtgpu * gpu) {
     return 0;
 }
 
+/**
+ * @brief 加载 API Remoting 后端库
+ * 请求 virglrenderer 加载并初始化计算后端
+ * @param gpu VirtGPU 设备指针
+ * @return 加载库的返回码
+ */
 static ApirLoadLibraryReturnCode virtgpu_load_library(virtgpu * gpu) {
     apir_encoder *            encoder;
     apir_decoder *            decoder;

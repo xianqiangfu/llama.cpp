@@ -20,6 +20,9 @@
  * IN THE SOFTWARE.
  */
 
+// GGML CANN (Compute Architecture for Neural Networks) 后端实现
+// 提供基于华为 CANN 框架的 NPU 加速支持
+// 主要面向华为昇腾（Ascend）AI 处理器
 #include "ggml-cann.h"
 
 #include "ggml-backend-impl.h"
@@ -51,13 +54,13 @@
 #define GGML_CANN_NAME "CANN"
 
 /**
- * @brief Handles CANN errors by printing an error message and aborting.
+ * @brief 通过打印错误消息并中止来处理 CANN 错误
  *
- * @param stmt The statement that caused the error.
- * @param func The function in which the error occurred.
- * @param file The file in which the error occurred.
- * @param line The line number where the error occurred.
- * @param msg The error message.
+ * @param stmt 导致错误的语句
+ * @param func 发生错误的函数
+ * @param file 发生错误的文件
+ * @param line 发生错误的行号
+ * @param msg 错误消息
  */
 [[noreturn]] void ggml_cann_error(const char * stmt, const char * func, const char * file, int line, const char * msg) {
     int32_t id = -1;
@@ -66,33 +69,33 @@
     GGML_LOG_ERROR("CANN error: %s\n", msg);
     GGML_LOG_ERROR("  current device: %d, in function %s at %s:%d\n", id, func, file, line);
     GGML_LOG_ERROR("  %s\n", stmt);
-    // abort with GGML_ASSERT to get a stack trace
+    // 使用 GGML_ABORT 中止以获取堆栈跟踪
     GGML_ABORT("CANN error");
 }
 
-// Thread-local variable to record the current device of this thread.
+// 线程局部变量，记录此线程的当前设备
 thread_local int g_current_cann_device = -1;
 
 /**
- * @brief Set the CANN device to be used.
+ * @brief 设置要使用的 CANN 设备
  *
- * @param device The target device ID to set.
+ * @param device 要设置的目标设备 ID
  */
 void ggml_cann_set_device(const int32_t device) {
     // int current_device = -1;
-    // Note: In some CANN versions, if no device has been set yet,
-    //       aclrtGetDevice(&current_device) may return 0 by default.
+    // 注意：在某些 CANN 版本中，如果尚未设置设备，
+    //       aclrtGetDevice(&current_device) 可能默认返回 0
     // aclrtGetDevice(&current_device);
 
-    // If the current device is already the target one, no need to switch.
+    // 如果当前设备已经是目标设备，则无需切换
     if (device == g_current_cann_device) {
         return;
     }
 
-    // Switch to the new device.
+    // 切换到新设备
     ACL_CHECK(aclrtSetDevice(device));
 
-    // Update the global device record.
+    // 更新全局设备记录
     g_current_cann_device = device;
 }
 

@@ -1,3 +1,17 @@
+/**
+ * @file htp-drv.h
+ * @brief Hexagon 张量处理器 (HTP) 驱动接口头文件
+ *
+ * 本文件定义了与 Qualcomm Hexagon DSP HTP 驱动交互的接口，包括：
+ * - 驱动初始化和域管理
+ * - 架构版本查询
+ * - 跨平台兼容性定义（Windows/Linux/Hexagon）
+ * - 错误码和超时设置
+ *
+ * @author llama.cpp contributors
+ * @copyright MIT License
+ */
+
 #pragma once
 
 #ifdef __cplusplus
@@ -23,36 +37,36 @@ extern "C" {
 #    define HTPDRV_API __attribute__ ((visibility ("default"))) extern
 #endif
 
-/* Offset to differentiate HLOS and Hexagon error codes.
-   Stores the value of AEE_EOFFSET for Hexagon. */
+/* 偏移量用于区分 HLOS 和 Hexagon 错误码。
+   存储 Hexagon 的 AEE_EOFFSET 值。 */
 #ifndef DSP_OFFSET
 #    define DSP_OFFSET 0x80000400
 #endif
 
-/* Errno for connection reset by peer. */
+/* 连接被对端重置的错误码。 */
 #ifndef ECONNRESET
 #    ifdef __hexagon__
 #        define ECONNRESET 104
 #    endif
 #endif
 
-/* Abstraction of different OS specific sleep APIs.
-   SLEEP accepts input in seconds. */
+/* 不同操作系统特定睡眠 API 的抽象。
+   SLEEP 接受以秒为单位的输入。 */
 #ifndef SLEEP
 #    ifdef __hexagon__
 #        define SLEEP(x)                      \
-            { /* Do nothing for simulator. */ \
+            { /* 模拟器不执行任何操作。 */ \
             }
 #    else
 #        ifdef _WIN32
-#            define SLEEP(x) Sleep(1000 * x) /* Sleep accepts input in milliseconds. */
+#            define SLEEP(x) Sleep(1000 * x) /* Sleep 接受以毫秒为单位的输入。 */
 #        else
-#            define SLEEP(x) sleep(x)        /* sleep accepts input in seconds. */
+#            define SLEEP(x) sleep(x)        /* sleep 接受以秒为单位的输入。 */
 #        endif
 #    endif
 #endif
 
-/* Include windows specific header files. */
+/* 包含 Windows 特定的头文件。 */
 #ifdef _WIN32
 #    include <windows.h>
 #    include <sysinfoapi.h>
@@ -60,16 +74,16 @@ extern "C" {
 #    define _WINSOCK_DEPRECATED_NO_WARNINGS 1
 #endif
 
-/* Includes and defines for all HLOS except windows */
+/* 除 Windows 外所有 HLOS 的包含和定义 */
 #if !defined(__hexagon__) && !defined(_WIN32)
 #    include "unistd.h"
 
 #    include <sys/time.h>
 #endif
 
-/* Includes and defines for Hexagon and all HLOS except Windows. */
+/* Hexagon 和除 Windows 外所有 HLOS 的包含和定义。 */
 #if !defined(_WIN32)
-/* Weak reference to remote symbol for compilation. */
+/* 远程符号的弱引用用于编译。 */
 #    pragma weak remote_session_control
 #    pragma weak remote_handle_control
 #    pragma weak remote_handle64_control
@@ -89,29 +103,28 @@ extern "C" {
 #endif
 
 /**
- * htpdrv_init API: driver interface entry point
+ * @brief htpdrv_init API: 驱动接口入口点
  *
- * @return      Return AEE error codes as defined in Hexagon SDK.
+ * @return      返回 Hexagon SDK 中定义的 AEE 错误码。
  */
 HTPDRV_API int htpdrv_init(void);
 
 /**
- * get_domain API: get domain struct from domain value.
+ * @brief get_domain API: 从域值获取域结构体。
  *
- * @param[in]  domain value of a domain
- * @return     Returns domain struct of the domain if it is supported or else
- *             returns NULL.
+ * @param[in]  domain 一个域的值
+ * @return     如果域受支持则返回域的结构体指针，否则返回 NULL。
  *
  */
 HTPDRV_API domain * get_domain(int domain_id);
 
 /**
- * get_hex_arch_ver API: query the Hexagon processor architecture version information
+ * @brief get_hex_arch_ver API: 查询 Hexagon 处理器架构版本信息
  *
- * @param[in]   domain_id value of a domain
- * @param[out]  Arch version (73, 75, ...)
- * @return      0 if query is successful.
- *              non-zero if error, return value points to the error.
+ * @param[in]   domain_id 域的值
+ * @param[out]  Arch 版本（73, 75, ...）
+ * @return      查询成功返回 0。
+ *              出错时返回非零值，返回值指向错误。
  *
  */
 HTPDRV_API int get_hex_arch_ver(int domain, int * arch);

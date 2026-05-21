@@ -1,12 +1,49 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+JSON Schema 转 GBNF 语法转换工具
+
+本脚本将 JSON Schema 转换为 llama.cpp 可使用的 GBNF 语法约束格式。
+主要功能包括：
+- 解析 JSON Schema 定义
+- 支持基本类型（string, number, integer, boolean, object, array, null）
+- 支持嵌套结构和引用
+- 支持正则表达式模式
+- 支持枚举和常量值
+- 支持混合类型（anyOf, oneOf）
+- 支持数组长度限制
+- 支持字符串长度限制
+- 支持数值范围限制
+
+使用示例：
+    python json_schema_to_grammar.py schema.json > grammar.gbnf
+
+支持的 JSON Schema 特性：
+- type 和 format
+- properties 和 required
+- items 和 prefixItems（数组）
+- pattern（正则表达式）
+- enum 和 const
+- minimum, maximum, exclusiveMinimum, exclusiveMaximum
+- minLength, maxLength
+- minItems, maxItems
+- $ref（引用）
+- anyOf, oneOf, allOf
+
+注意：不支持负/正向前瞻和贪婪/非贪婪修饰符等某些正则表达式特性。
+
+@copyright MIT License
+"""
+
 import argparse
 import itertools
 import json
 import re
 import sys
 from typing import Any, List, Optional, Set, Tuple, Union
+
+# ========== 辅助函数 ==========
 
 def _build_repetition(item_rule, min_items, max_items, separator_rule=None):
 

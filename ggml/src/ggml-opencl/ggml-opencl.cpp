@@ -1,11 +1,15 @@
 #define CL_TARGET_OPENCL_VERSION GGML_OPENCL_TARGET_VERSION
 #define CL_USE_DEPRECATED_OPENCL_1_2_APIS
 
-// suppress warnings in CL headers for GCC and Clang
+// 在 GCC 和 Clang 中抑制 CL 头文件的警告
 #pragma GCC diagnostic ignored "-Woverlength-strings"
 #ifdef __clang__
 #pragma GCC diagnostic ignored "-Wgnu-anonymous-struct"
 #endif
+
+// GGML OpenCL 后端实现
+// 提供基于 OpenCL (Open Computing Language) 的跨平台 GPU 加速支持
+// 支持 AMD、Intel、NVIDIA 等 GPU 厂商
 
 #include "ggml-opencl.h"
 #include "ggml-backend.h"
@@ -32,12 +36,13 @@
 
 #undef MIN
 #undef MAX
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
-#define CEIL_DIV(M, N) (((M) + (N)-1) / (N))
+#define MIN(a, b) ((a) < (b) ? (a) : (b)) // 最小值宏
+#define MAX(a, b) ((a) > (b) ? (a) : (b)) // 最大值宏
+#define CEIL_DIV(M, N) (((M) + (N)-1) / (N)) // 向上整除
 
-#define UNUSED(x) (void)(x)
+#define UNUSED(x) (void)(x) // 未使用变量宏
 
+// OpenCL 错误检查宏
 #define CL_CHECK(err)                                               \
     do {                                                            \
         cl_int err_ = (err);                                        \
@@ -52,50 +57,57 @@
 // OpenCL
 //------------------------------------------------------------------------------
 
+// OpenCL 前向计算函数
 bool ggml_cl_compute_forward(ggml_backend_t backend, struct ggml_tensor * tensor);
 
-// See https://gmplib.org/~tege/divcnst-pldi94.pdf figure 4.1.
-// Precompute mp (m' in the paper) and L such that division
-// can be computed using a multiply (high 32b of 64b result)
-// and a shift:
+bool ggml_cl_compute_forward(ggml_backend_t backend, struct ggml_tensor * tensor);
+
+// 快速除法值结构
+// 见 https://gmplib.org/~tege/divcnst-pldi94.pdf 图 4.1。
+// 预计算 mp（论文中的 m'）和 L，使除法
+// 可以使用乘法（64 位结果的高 32 位）
+// 和移位来计算：
 //
 // n/d = (mulhi(n, mp) + n) >> L;
 struct fastdiv_vals {
-    uint32_t mp;
-    uint32_t L;
-    uint32_t d;
-    uint32_t pad;
+    uint32_t mp;    // 预计算的乘数
+    uint32_t L;     // 移位值
+    uint32_t d;     // 除数
+    uint32_t pad;    // 填充
 };
 static_assert(sizeof(fastdiv_vals) == 16, "fastdiv_vals size incorrect");
 
+// 初始化快速除法值
 static fastdiv_vals init_fastdiv_values(uint64_t d_64) {
     GGML_ASSERT(d_64 != 0);
     GGML_ASSERT(d_64 <= std::numeric_limits<uint32_t>::max());
 
     uint32_t d = (uint32_t)d_64;
 
-    // compute L = ceil(log2(d));
+    // 计算 L = ceil(log2(d));
     uint32_t L = 0;
     while (L < 32 && (uint32_t{ 1 } << L) < d) {
         L++;
     }
 
     uint32_t mp = (uint32_t) ((uint64_t{ 1 } << 32) * ((uint64_t{ 1 } << L) - d) / d + 1);
-    // pack divisor as well to reduce error surface
+    // 同时打包除数以减少错误面
     return { mp, L, d, 0 };
 }
 
+// GPU 系列/厂商枚举
 enum GPU_FAMILY {
-    ADRENO,
-    INTEL,
-    UNKNOWN,
+    ADRENO,    // Qualcomm Adreno GPU
+    INTEL,     // Intel GPU
+    UNKNOWN,   // 未知 GPU
 };
 
+// Adreno GPU 代号枚举
 enum ADRENO_GPU_GEN {
     ADRENO_UNKNOWN,
-    A7X,
-    A8X,
-    X1E,
+    A7X,       // Adreno 7xx 系列
+    A8X,       // Adreno 8xx 系列
+    X1E,       // Adreno X1 Elite
 };
 
 enum ADRENO_CL_COMPILER_TYPE {

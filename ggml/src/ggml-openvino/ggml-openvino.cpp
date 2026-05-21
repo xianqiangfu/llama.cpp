@@ -1,3 +1,6 @@
+// GGML OpenVINO 后端实现
+// 提供基于 Intel OpenVINO 工具包的推理加速支持
+// 支持 Intel CPU、GPU、NPU 等设备
 #include "ggml-openvino.h"
 
 #include "ggml-backend-impl.h"
@@ -35,41 +38,41 @@
 #endif
 
 // =====================================================
-// OpenVINO Buffer Implementation using ov::Tensor
+// 使用 ov::Tensor 的 OpenVINO 缓冲区实现
 // =====================================================
 //
-// Design: This implementation uses a hybrid approach:
-// 1. For weight tensors: Store a pre-built ov::op::v0::Constant in tensor->extra
-//    - This avoids the memcpy during graph construction
-//    - For quantized weights, the constant is already converted to OpenVINO format
-// 2. For KV cache / compute tensors: Store an ov::Tensor in tensor->extra
-//    - This can be directly passed to infer_request
-//    - Future: can be changed to ov::RemoteTensor for GPU/NPU
+// 设计：此实现使用混合方法：
+// 1. 对于权重张量：在 tensor->extra 中存储预构建的 ov::op::v0::Constant
+//    - 这避免了图构建期间的 memcpy
+//    - 对于量化权重，常量已转换为 OpenVINO 格式
+// 2. 对于 KV 缓存/计算张量：在 tensor->extra 中存储 ov::Tensor
+//    - 这可以直接传递给 infer_request
+//    - 未来：可以更改为 ov::RemoteTensor 用于 GPU/NPU
 //
-// This design is similar to:
-// - CUDA split buffer: tensor->extra stores device pointers
-// - CPU repack buffer: tensor->extra stores tensor_traits with repacked data
+// 此设计类似于：
+// - CUDA 分割缓冲区：tensor->extra 存储设备指针
+// - CPU 重打包缓冲区：tensor->extra 存储带有重打包数据的 tensor_traits
 // =====================================================
 
-// Buffer context that manages per-tensor allocations (no contiguous buffer for weights)
+// 管理每个张量分配的缓冲区上下文（权重没有连续缓冲区）
 struct ggml_backend_openvino_buffer_context {
-    int device;
-    std::string name;
-    size_t id;
+    int device;                        // 设备 ID
+    std::string name;                  // 名称
+    size_t id;                         // 唯一 ID
 
-    // For non-weight buffers (KV cache, compute), we still use contiguous allocation
-    void * data;
-    size_t size;
-    bool is_remote;
+    // 对于非权重缓冲区（KV 缓存、计算），我们仍然使用连续分配
+    void * data;                       // 数据指针
+    size_t size;                       // 大小
+    bool is_remote;                    // 是否为远程缓冲区
 
-    // Wrapping of the buffer
+    // 缓冲区的包装
     std::shared_ptr<ov::Tensor> ov_buffer;
 
-    // Track all extras for cleanup
+    // 跟踪所有 extras 用于清理
     std::map<ggml_tensor *, ggml_openvino_extra_base *> tensor_extras;
 
-    // Used for re-allocation on device for kvcache
-    void * data_prev;
+    // 用于在设备上重新分配 KV 缓存
+    void * data_prev;                 // 前一个数据指针
 
     ggml_backend_openvino_buffer_context(int device, size_t size, bool is_remote = false) :
         device(device),

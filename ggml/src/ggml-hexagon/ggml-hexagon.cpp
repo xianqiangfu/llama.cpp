@@ -1,3 +1,19 @@
+/**
+ * @file ggml-hexagon.cpp
+ * @brief Qualcomm Hexagon DSP 后端实现
+ *
+ * 本文件实现了 llama.cpp 在 Qualcomm Hexagon DSP 上的后端支持，通过 HTP (Hexagon Tensor Processor)
+ * 进行张量计算加速。主要功能包括：
+ * - 与 Hexagon DSP 的通信和会话管理
+ * - 张量缓冲区的管理和内存映射
+ * - Q4、Q8、MXFP4 等量化格式的重新打包
+ * - 操作批处理和队列管理
+ * - 性能分析和 PMU 计数器支持
+ *
+ * @author llama.cpp contributors
+ * @copyright MIT License
+ */
+
 #include <assert.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -48,40 +64,61 @@ using intvec  = std::vector<int>;
 using uintvec = std::vector<unsigned int>;
 using u32vec  = std::vector<uint32_t>;
 
-static int    opt_arch    = 0; // autodetect
-static size_t opt_ndev    = 1;
-static size_t opt_nhvx    = 0; // use all
-static int    opt_use_hmx = 1; // when set, enable HMX; when 0, use HVX only
-static size_t opt_vmem    = HTP_OP_MAX_VMEM_DEFAULT;  // max available va space for buffer mappings
-static size_t opt_mbuf    = 1ul * 1024 * 1024 * 1024; // max buffer size
-static int    opt_etm     = 0;
-static int    opt_verbose = 0;
-static int    opt_profile = 0; // profiling mode (0-disabled, 1-basic, 2-pmu)
-static int    opt_hostbuf = 1; // hostbuf ON by default
+// ========== Hexagon 后端配置选项 ==========
 
-// Default PMU events, if profiling with PMU (mode=2) is enabled
-// See https://docs.qualcomm.com/doc/80-N2040-60/topic/pmu-events.html
-//     https://docs.qualcomm.com/doc/80-N2040-61/topic/hvx-pmu-events.html
+static int    opt_arch    = 0; // 架构版本（0表示自动检测）
+static size_t opt_ndev    = 1; // 设备数量
+static size_t opt_nhvx    = 0; // HVX 上下文数量（0表示使用全部）
+static int    opt_use_hmx = 1; // 是否启用 HMX（1启用，0仅使用HVX）
+static size_t opt_vmem    = HTP_OP_MAX_VMEM_DEFAULT;  // 缓冲区映射的最大虚拟地址空间
+static size_t opt_mbuf    = 1ul * 1024 * 1024 * 1024; // 单个缓冲区的最大大小（1GB）
+static int    opt_etm     = 0; // ETM（嵌入式跟踪宏单元）模式
+static int    opt_verbose = 0; // 详细输出级别
+static int    opt_profile = 0; // 性能分析模式（0-禁用，1-基础，2-PMU）
+static int    opt_hostbuf = 1; // 是否使用主机缓冲区（默认启用）
+
+// 默认的 PMU（性能监控单元）事件，当启用 PMU 分析（mode=2）时使用
+// 参考：https://docs.qualcomm.com/doc/80-N2040-60/topic/pmu-events.html
+//       https://docs.qualcomm.com/doc/80-N2040-61/topic/hvx-pmu-events.html
 static u32vec opt_pmu_evt { 0x3, 0x111, 0x100, 0x105, 0x240, 0x256, 0x7D, 0x8C };
 
-// Enable all stages by default
+// 默认启用所有阶段
 static int opt_opstage  = HTP_OPSTAGE_QUEUE | HTP_OPSTAGE_COMPUTE;
-static int opt_opbatch  = 1024; // max number of ops in a batch
-static int opt_opqueue  = 16;   // max number of pending batches
+static int opt_opbatch  = 1024; // 批处理中操作的最大数量
+static int opt_opqueue  = 16;   // 待处理批处理的最大数量
 
-static std::regex* opt_opfilter = NULL; // regex of ops to not claim
+static std::regex* opt_opfilter = NULL; // 操作过滤正则表达式（不处理的操作）
 
 #define HEX_VERBOSE(...) \
     if (opt_verbose) GGML_LOG_DEBUG(__VA_ARGS__)
 
+// ========== 工具函数 ==========
+
+/**
+ * @brief 检查地址是否按指定对齐
+ * @param addr 要检查的地址
+ * @param align 对齐字节数
+ * @return 如果地址已对齐返回true
+ */
 static inline uint64_t hex_is_aligned(void * addr, uint32_t align) {
     return ((size_t) addr & (align - 1)) == 0;
 }
 
+/**
+ * @brief 向上舍入到最近的m倍数
+ * @param n 输入数值
+ * @param m 舍入基数
+ * @return 舍入后的值
+ */
 static inline size_t hex_round_up(size_t n, size_t m) {
     return m * ((n + m - 1) / m);
 }
 
+/**
+ * @brief 将状态码转换为字符串
+ * @param status HTP 状态码
+ * @return 状态字符串描述
+ */
 static const char * status_to_str(uint32_t status) {
     switch (status) {
         case HTP_STATUS_OK:
@@ -99,8 +136,14 @@ static const char * status_to_str(uint32_t status) {
     }
 }
 
-// ** debug helpers
+// ========== 调试辅助函数 ==========
 
+/**
+ * @brief 转储操作执行信息
+ * @param sess_name 会话名称
+ * @param op 张量操作
+ * @param req_flags 请求标志
+ */
 static void ggml_hexagon_dump_op_exec(const std::string &sess_name, const ggml_tensor * op, const uint32_t req_flags) {
     if (!opt_verbose) return;
 
@@ -109,6 +152,12 @@ static void ggml_hexagon_dump_op_exec(const std::string &sess_name, const ggml_t
                 ggml_op_desc(op), desc.names, desc.dims, desc.types, desc.strides, desc.buffs, req_flags);
 }
 
+/**
+ * @brief 转储操作支持信息
+ * @param sess_name 会话名称
+ * @param op 张量操作
+ * @param supp 是否支持
+ */
 static void ggml_hexagon_dump_op_supp(const std::string &sess_name, const struct ggml_tensor * op, bool supp) {
     if (!opt_verbose) return;
 
@@ -117,6 +166,14 @@ static void ggml_hexagon_dump_op_supp(const std::string &sess_name, const struct
                 ggml_op_desc(op), desc.names, desc.dims, desc.types, desc.strides, desc.buffs, supp ? "yes" : "no");
 }
 
+/**
+ * @brief 转储操作性能分析信息
+ * @param sess_name 会话名称
+ * @param op 张量操作
+ * @param op_usec 操作执行时间（微秒）
+ * @param op_cycles 操作执行周期数
+ * @param pmu PMU计数器数组
+ */
 static void ggml_hexagon_dump_op_prof(const std::string &sess_name, const ggml_tensor * op,
                                       uint32_t op_usec, uint32_t op_cycles, const uint32_t pmu[]) {
     if (!opt_profile) return;
@@ -133,7 +190,7 @@ static void ggml_hexagon_dump_op_prof(const std::string &sess_name, const ggml_t
             ggml_op_desc(op), desc.names, desc.dims, desc.types, desc.strides, op_usec, op_cycles, pmu_str);
 }
 
-// ** backend sessions
+// ========== 后端会话 ==========
 
 struct ggml_hexagon_opbatch;
 struct ggml_hexagon_opqueue;
@@ -173,26 +230,38 @@ struct ggml_hexagon_session {
     void flush_batch();
 };
 
-// ** backend buffers
+// ========== 后端缓冲区 ==========
 
+/**
+ * @brief Hexagon 后端缓冲区类型上下文
+ * 存储缓冲区类型与会话的关联信息
+ */
 struct ggml_backend_hexagon_buffer_type_context {
     ggml_backend_hexagon_buffer_type_context(const std::string & name, ggml_hexagon_session * sess) {
         this->sess = sess;
         this->name = name;
     }
 
-    ggml_hexagon_session * sess;
-    std::string            name;
+    ggml_hexagon_session * sess;  // 关联的 Hexagon 会话
+    std::string            name;  // 缓冲区类型名称
 };
 
+/**
+ * @brief Hexagon 共享缓冲区
+ * 管理在主机和 DSP 之间共享的内存缓冲区
+ */
 struct ggml_hexagon_shared_buffer {
-    ggml_hexagon_session * sess;
-    uint8_t *              base;
-    size_t                 size;
-    int                    fd;
-    bool                   mapped;
-    bool                   pinned;
+    ggml_hexagon_session * sess;  // 所属会话
+    uint8_t *              base;  // 缓冲区基地址
+    size_t                 size;  // 缓冲区大小
+    int                    fd;    // 文件描述符（用于 fastrpc 映射）
+    bool                   mapped; // 是否已映射到 DSP
+    bool                   pinned; // 是否为固定缓冲区（延迟映射）
 
+    /**
+     * @brief 将缓冲区映射到 Hexagon DSP
+     * 使用 fastrpc_mmap 创建共享内存映射
+     */
     void mmap() {
         fastrpc_map_flags flags = this->pinned ? FASTRPC_MAP_FD : FASTRPC_MAP_FD_DELAYED;
 
@@ -209,11 +278,15 @@ struct ggml_hexagon_shared_buffer {
         this->mapped = true;
     }
 
+    /**
+     * @brief 取消缓冲区的 DSP 映射
+     * 对于固定缓冲区，通知 HTP 释放引用
+     */
     void unmap() {
         if (!this->mapped) return;
 
         if (!this->pinned) {
-            // HTP might still hold a reference, tell it drop it
+            // HTP 可能仍持有引用，通知它释放
             htp_iface_munmap(sess->handle, this->fd);
         }
 
@@ -226,6 +299,11 @@ struct ggml_hexagon_shared_buffer {
         this->fd     = -1;
     }
 
+    /**
+     * @brief 分配共享缓冲区内存
+     * 使用 rpcmem_alloc2 分配可通过 fastrpc 共享的内存
+     * @param size 缓冲区大小
+     */
     void alloc(size_t size) {
         if (this->base) return;
 
@@ -247,6 +325,10 @@ struct ggml_hexagon_shared_buffer {
         mmap();
     }
 
+    /**
+     * @brief 释放共享缓冲区内存
+     * 取消映射并释放 rpcmem 分配的内存
+     */
     void free() {
         if (!this->base) return;
 
@@ -259,6 +341,12 @@ struct ggml_hexagon_shared_buffer {
         this->base = NULL;
     }
 
+    /**
+     * @brief 构造函数
+     * @param sess 所属会话
+     * @param size 缓冲区大小
+     * @param pinned 是否为固定缓冲区（延迟映射）
+     */
     ggml_hexagon_shared_buffer(ggml_hexagon_session * sess, size_t size, bool pinned = false) {
         this->sess   = sess;
         this->size   = 0;
@@ -279,16 +367,31 @@ static ggml_hexagon_session * ggml_backend_hexagon_buffer_get_sess(ggml_backend_
     return static_cast<ggml_backend_hexagon_buffer_type_context *>(buffer->buft->context)->sess;
 }
 
+/**
+ * @brief 释放 Hexagon 后端缓冲区
+ * @param buffer 要释放的缓冲区
+ */
 static void ggml_backend_hexagon_buffer_free_buffer(ggml_backend_buffer_t buffer) {
     auto sbuf = static_cast<ggml_hexagon_shared_buffer *>(buffer->context);
     delete sbuf;
 }
 
+/**
+ * @brief 获取缓冲区基地址
+ * @param buffer 缓冲区
+ * @return 基地址指针
+ */
 static void * ggml_backend_hexagon_buffer_get_base(ggml_backend_buffer_t buffer) {
     auto sbuf = static_cast<ggml_hexagon_shared_buffer *>(buffer->context);
     return sbuf->base;
 }
 
+/**
+ * @brief 初始化张量到缓冲区
+ * @param buffer 缓冲区
+ * @param tensor 要初始化的张量
+ * @return 状态码
+ */
 static enum ggml_status ggml_backend_hexagon_buffer_init_tensor(ggml_backend_buffer_t buffer, ggml_tensor * tensor) {
     auto sbuf = static_cast<ggml_hexagon_shared_buffer *>(buffer->context);
     auto sess = sbuf->sess;
@@ -303,11 +406,21 @@ static enum ggml_status ggml_backend_hexagon_buffer_init_tensor(ggml_backend_buf
     return GGML_STATUS_SUCCESS;
 }
 
-// ======== Q4x4x2 ====================
+// ========== Q4x4x2 量化格式处理 ==========
+
+/**
+ * @brief Q4x4x2 格式的量化值对
+ * 包含两个打包的4位整数
+ */
 struct x2_q4 {
     int v[2];
 };
 
+/**
+ * @brief 从字节解包两个4位值
+ * @param v 包含两个4位值的字节
+ * @return 解包后的值对（每个值在-8到7之间）
+ */
 static x2_q4 unpack_q4(uint8_t v) {
     x2_q4 x = { (int) (v & 0x0f) - 8, (int) (v >> 4) - 8 };
     return x;
@@ -366,6 +479,16 @@ static void pack_q4_0_quants(block_q4_0 * x, const uint8_t * qs, unsigned int bi
     }
 }
 
+/**
+ * @brief 将 Q4_0 格式的量化行重新打包为 Q4x4x2 格式
+ *
+ * Q4x4x2 格式为 Hexagon HTP 优化，将8个 Q4_0 块打包在一起以提高数据局部性。
+ * 重新打包后，量化值在前，缩放因子在后，每个行包含8个块的数据。
+ *
+ * @param y 输出缓冲区（Q4x4x2 格式）
+ * @param x 输入数据（Q4_0 格式）
+ * @param k 行的元素数量
+ */
 static void repack_row_q4x4x2(uint8_t * y, const block_q4_0 * x, int64_t k) {
     static const int qk = QK_Q4_0x4x2;
     const int        nb = (k + qk - 1) / qk;  // number of blocks (padded)
@@ -434,6 +557,12 @@ static void repack_row_q4x4x2(uint8_t * y, const block_q4_0 * x, int64_t k) {
     }
 }
 
+/**
+ * @brief 将 Q4x4x2 格式解包回 Q4_0 格式
+ * @param x 输出数据（Q4_0 格式）
+ * @param y 输入缓冲区（Q4x4x2 格式）
+ * @param k 行的元素数量
+ */
 static void unpack_row_q4x4x2(block_q4_0 * x, const uint8_t * y, int64_t k) {
     static const int qk = QK_Q4_0x4x2;
     const int        nb = (k + qk - 1) / qk;  // number of blocks (padded)
@@ -509,6 +638,11 @@ static void unpack_row_q4x4x2(block_q4_0 * x, const uint8_t * y, int64_t k) {
     }
 }
 
+/**
+ * @brief 初始化 Q4x4x2 行为零
+ * @param x 要初始化的块数组（Q4_0 格式）
+ * @param k 行的元素数量
+ */
 static void init_row_q4x4x2(block_q4_0 * x, int64_t k) {
     static const int qk = QK_Q4_0x4x2;
     const int        nb = (k + qk - 1) / qk;  // number of blocks (padded)
@@ -545,6 +679,16 @@ static void init_row_q4x4x2(block_q4_0 * x, int64_t k) {
 }
 
 // repack q4_0 data into q4x4x2 tensor
+/**
+ * @brief 将 Q4_0 格式的张量数据重新打包为 Q4x4x2 格式
+ *
+ * 此函数处理完整的张量，包括对齐和填充。Q4x4x2 格式为 Hexagon HTP
+ * 优化，可提高内存访问效率和计算吞吐量。
+ *
+ * @param t 目标张量
+ * @param data 源数据（Q4_0 格式）
+ * @param size 要复制的数据大小
+ */
 static void repack_q4_0_q4x4x2(ggml_tensor * t, const void * data, size_t size) {
     int64_t nrows = ggml_nrows(t);
 
@@ -606,6 +750,12 @@ static void repack_q4_0_q4x4x2(ggml_tensor * t, const void * data, size_t size) 
 }
 
 // repack q4x4x2 tensor into q4_0 data
+/**
+ * @brief 将 Q4x4x2 格式的张量数据解包回 Q4_0 格式
+ * @param data 目标数据缓冲区
+ * @param t 源张量（Q4x4x2 格式）
+ * @param size 要复制的数据大小
+ */
 static void repack_q4x4x2_q4_0(void * data, const ggml_tensor * t, size_t size) {
     int64_t nrows = ggml_nrows(t);
 

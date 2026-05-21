@@ -1,3 +1,5 @@
+// GGML Vulkan 后端实现
+// 提供基于 Vulkan 图形 API 的 GPU 加速计算支持
 #include "ggml-vulkan.h"
 #include <vulkan/vulkan_core.h>
 #if defined(GGML_VULKAN_RUN_TESTS) || defined(GGML_VULKAN_CHECK_RESULTS)
@@ -6,9 +8,12 @@
 #endif
 
 // See https://github.com/KhronosGroup/Vulkan-Hpp?tab=readme-ov-file#extensions--per-device-function-pointers-
+// 动态加载 Vulkan 分发器
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 // We use VULKAN_HPP_DEFAULT_DISPATCHER, but not VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 // to avoid conflicts with applications or other libraries who might use it.
+// 我们使用 VULKAN_HPP_DEFAULT_DISPATCHER 而不是 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
+// 以避免与其他应用程序或库的冲突
 #if VK_HEADER_VERSION >= 301
 namespace vk::detail { class DispatchLoaderDynamic; }
 using vk::detail::DispatchLoaderDynamic;
@@ -21,9 +26,9 @@ DispatchLoaderDynamic & ggml_vk_default_dispatcher();
 
 #include <vulkan/vulkan.hpp>
 
-// SPIR-V Headers: different SDK installations expose different include paths.
-// LunarG Vulkan SDK on Windows typically provides <spirv-headers/spirv.hpp>.
-// Linux packages, MSYS2 and MinGW often use the Khronos layout <spirv/unified1/spirv.hpp>.
+// SPIR-V 头文件：不同的 SDK 安装提供不同的包含路径
+// Windows 上的 LunarG Vulkan SDK 通常提供 <spirv-headers/spirv.hpp>
+// Linux 包、MSYS2 和 MinGW 通常使用 Khronos 布局 <spirv/unified1/spirv.hpp>
 #if __has_include(<spirv/unified1/spirv.hpp>)
 #    include <spirv/unified1/spirv.hpp>
 #elif __has_include(<spirv-headers/spirv.hpp>)
@@ -80,7 +85,7 @@ DispatchLoaderDynamic & ggml_vk_default_dispatcher();
 
 #include "ggml-vulkan-shaders.hpp"
 
-// remove this once it's more widely available in the SDK
+// 一旦 SDK 中广泛支持就可以移除这个
 #if !defined(VK_KHR_shader_bfloat16)
 
 #define VK_KHR_shader_bfloat16 1
@@ -98,18 +103,24 @@ typedef struct VkPhysicalDeviceShaderBfloat16FeaturesKHR {
 } VkPhysicalDeviceShaderBfloat16FeaturesKHR;
 #endif
 
+// 向上舍入到最接近的 2 的幂
 #define ROUNDUP_POW2(M, N) (((M) + (N) - 1) & ~((N) - 1))
+// 向上整除
 #define CEIL_DIV(M, N) (((M) + (N)-1) / (N))
+// 检查是否为 2 的幂
 static bool is_pow2(uint32_t x) { return x > 1 && (x & (x-1)) == 0; }
 
+// Vulkan 厂商 ID 定义
 #define VK_VENDOR_ID_AMD 0x1002
 #define VK_VENDOR_ID_APPLE 0x106b
 #define VK_VENDOR_ID_INTEL 0x8086
 #define VK_VENDOR_ID_NVIDIA 0x10de
 #define VK_VENDOR_ID_QUALCOMM 0x5143
 
+// Vulkan 描述符池大小
 #define VK_DEVICE_DESCRIPTOR_POOL_SIZE 256
 
+// Vulkan 错误检查宏
 #define VK_CHECK(err, msg)                                          \
     do {                                                            \
         vk::Result err_ = (err);                                    \
@@ -121,6 +132,7 @@ static bool is_pow2(uint32_t x) { return x > 1 && (x & (x-1)) == 0; }
     } while (0)
 
 #ifdef GGML_VULKAN_DEBUG
+// 调试日志宏
 #define VK_LOG_DEBUG(msg) std::cerr << msg << std::endl
 #else
 #define VK_LOG_DEBUG(msg) ((void) 0)
@@ -128,35 +140,37 @@ static bool is_pow2(uint32_t x) { return x > 1 && (x & (x-1)) == 0; }
 
 struct ggml_backend_vk_context;
 
+// 最大参数数量
 #define MAX_PARAMETER_COUNT 12
-// Max number of adds that can be fused without exceeding MAX_PARAMETER_COUNT.
+// 不超过 MAX_PARAMETER_COUNT 时可以融合的最大 add 操作数
 #define MAX_FUSED_ADDS (MAX_PARAMETER_COUNT - 3)
 
 typedef std::shared_ptr<struct vk_pipeline_struct> vk_pipeline;
 
+// Vulkan 计算管线结构体
 struct vk_pipeline_struct {
-    std::string name;
-    vk::ShaderModule shader_module;
-    vk::PipelineLayout layout;
-    vk::Pipeline pipeline;
-    uint32_t push_constant_size;
-    uint32_t parameter_count;
-    std::array<uint32_t, 3> wg_denoms;
-    uint32_t align;
-    // true if fields have been set by ggml_vk_create_pipeline
+    std::string name;                          // 管线名称
+    vk::ShaderModule shader_module;           // 着色器模块
+    vk::PipelineLayout layout;                 // 管线布局
+    vk::Pipeline pipeline;                     // 管线对象
+    uint32_t push_constant_size;               // 推送常量大小
+    uint32_t parameter_count;                  // 参数数量
+    std::array<uint32_t, 3> wg_denoms;        // 工作组分母
+    uint32_t align;                            // 对齐要求
+    // 如果字段由 ggml_vk_create_pipeline 设置则为 true
     bool initialized {};
-    // set to true to request the pipeline is compiled
+    // 设置为 true 以请求编译管线
     std::atomic<bool> needed {};
-    // set to true when the shader has been compiled
+    // 着色器编译完成时设置为 true
     std::atomic<bool> compiled {};
-    // number of registers used, extracted from pipeline executable properties
+    // 寄存器使用数量，从管线可执行属性中提取
     uint32_t register_count {};
 
 #if defined(VK_EXT_shader_64bit_indexing)
-    bool is_64b_indexing {};
+    bool is_64b_indexing {};                   // 是否支持 64 位索引
 #endif
-    // linked list of pipelines for multiple compilation variants.
-    // currently only used to compile a 64-bit indexing variant.
+    // 用于多个编译变体的管线链表
+    // 目前仅用于编译 64 位索引变体
     vk_pipeline next;
 };
 
@@ -164,25 +178,27 @@ typedef std::weak_ptr<vk_pipeline_struct> vk_pipeline_ref;
 
 static void ggml_vk_destroy_pipeline(vk::Device& device, vk_pipeline& pipeline);
 
+// 矩阵乘法管线结构体
 struct vk_matmul_pipeline_struct {
-    vk_pipeline l, m, s;
-    vk_pipeline a_l, a_m, a_s;
-    // Returns true when all unaligned pipelines are null.
-    // We only check for unaligned variants since one of the unaligned pipelines must exist
-    // while aligned pipelines are optional
+    vk_pipeline l, m, s;                       // 大、中、小尺寸管线
+    vk_pipeline a_l, a_m, a_s;                 // 对齐变体的大、中、小尺寸管线
+    // 当所有未对齐管线为空时返回 true
+    // 我们只检查未对齐变体，因为必须存在其中一个未对齐管线
+    // 而对齐管线是可选的
     bool is_empty() const {
         return l == nullptr && m == nullptr && s == nullptr;
     }
 };
 typedef std::shared_ptr<vk_matmul_pipeline_struct> vk_matmul_pipeline;
 
+// 双累加器类型的矩阵乘法管线
 struct vk_matmul_pipeline2 {
     vk_matmul_pipeline2() {
         f16acc = std::make_shared<vk_matmul_pipeline_struct>();
         f32acc = std::make_shared<vk_matmul_pipeline_struct>();
     }
-    vk_matmul_pipeline f32acc;
-    vk_matmul_pipeline f16acc;
+    vk_matmul_pipeline f32acc;                 // FP32 累加器管线
+    vk_matmul_pipeline f16acc;                 // FP16 累加器管线
 };
 
 struct vk_device_struct;
@@ -193,6 +209,7 @@ struct vk_buffer_struct;
 typedef std::shared_ptr<vk_buffer_struct> vk_buffer;
 typedef std::weak_ptr<vk_buffer_struct> vk_buffer_ref;
 
+// Vulkan 后端缓冲区类型上下文
 struct ggml_backend_vk_buffer_type_context {
     std::string name;
     vk_device device;
@@ -200,47 +217,46 @@ struct ggml_backend_vk_buffer_type_context {
 
 struct vk_queue;
 
+// Vulkan 命令缓冲区结构
 struct vk_command_buffer {
-    vk::CommandBuffer buf;
-    uint64_t use_counter = 0;
-    bool in_use = false;
+    vk::CommandBuffer buf;                    // 命令缓冲区
+    uint64_t use_counter = 0;                 // 使用计数器
+    bool in_use = false;                      // 是否正在使用
 };
 
-// Stores command pool/buffers. There's an instance of this
-// for each (context,queue) pair and for each (device,queue) pair.
+// 存储命令池/缓冲区。对于每个 (context,queue) 对和每个 (device,queue) 对都有一个实例
 struct vk_command_pool {
-    void init(vk_device& device, vk_queue *q_);
-    void destroy(vk::Device& device);
+    void init(vk_device& device, vk_queue *q_);    // 初始化命令池
+    void destroy(vk::Device& device);              // 销毁命令池
 
-    vk::CommandPool pool;
-    // Using deque so the pointers to command buffers
-    // remain valid even if we add more
-    std::deque<vk_command_buffer> cmd_buffers;
+    vk::CommandPool pool;                      // 命令池
+    // 使用 deque 以便即使添加更多命令缓冲区，指针也保持有效
+    std::deque<vk_command_buffer> cmd_buffers; // 命令缓冲区集合
 
-    vk_queue *q;
+    vk_queue *q;                              // 关联的队列
 
-    size_t buffers_in_use() const {
+    size_t buffers_in_use() const {           // 获取正在使用的缓冲区数量
         return std::count_if(cmd_buffers.begin(), cmd_buffers.end(),
             [](const auto& cb) { return cb.in_use; });
     }
 };
 
-// Prevent simultaneous submissions to the same queue.
-// This could be per vk_queue if we stopped having two vk_queue structures
-// sharing the same vk::Queue.
+// 防止同时提交到同一个队列
+// 这可以是每个 vk_queue，如果我们停止两个 vk_queue 结构共享同一个 vk::Queue
 static std::mutex queue_mutex;
 
+// Vulkan 队列结构
 struct vk_queue {
-    uint32_t queue_family_index;
-    vk::Queue queue;
+    uint32_t queue_family_index;              // 队列族索引
+    vk::Queue queue;                          // Vulkan 队列对象
 
-    vk_command_pool cmd_pool;
+    vk_command_pool cmd_pool;                 // 命令池
 
-    vk::PipelineStageFlags stage_flags;
+    vk::PipelineStageFlags stage_flags;       // 管线阶段标志
 
-    bool transfer_only;
+    bool transfer_only;                       // 是否仅用于传输
 
-    // copy everything except the cmd_pool
+    // 复制除 cmd_pool 外的所有内容
     void copyFrom(vk_queue &other) {
         queue_family_index = other.queue_family_index;
         queue = other.queue;
@@ -271,15 +287,16 @@ static void ggml_vk_synchronize(ggml_backend_vk_context * ctx);
 static constexpr uint32_t mul_mat_vec_max_cols = 8;
 static constexpr uint32_t p021_max_gqa_ratio = 8;
 
+// Vulkan 设备架构枚举
 enum vk_device_architecture {
-    OTHER,
-    AMD_GCN,
-    AMD_RDNA1,
-    AMD_RDNA2,
-    AMD_RDNA3,
-    INTEL_XE2,
-    NVIDIA_PRE_TURING,
-    NVIDIA_TURING,
+    OTHER,                                   // 其他架构
+    AMD_GCN,                                 // AMD GCN 架构
+    AMD_RDNA1,                               // AMD RDNA1 架构
+    AMD_RDNA2,                               // AMD RDNA2 架构
+    AMD_RDNA3,                               // AMD RDNA3 架构
+    INTEL_XE2,                               // Intel Xe2 架构
+    NVIDIA_PRE_TURING,                       // NVIDIA Turing 之前架构
+    NVIDIA_TURING,                           // NVIDIA Turing 架构
 };
 
 static vk_device_architecture get_device_architecture(const vk::PhysicalDevice& device) {
@@ -394,17 +411,19 @@ static vk_device_architecture get_device_architecture(const vk::PhysicalDevice& 
     return vk_device_architecture::OTHER;
 }
 
+// 卷积形状枚举
 enum vk_conv_shapes {
-    CONV_SHAPE_128x128,
-    CONV_SHAPE_64x32,
-    CONV_SHAPE_32x256,
-    CONV_SHAPE_COUNT,
+    CONV_SHAPE_128x128,                      // 128x128 卷积形状
+    CONV_SHAPE_64x32,                        // 64x32 卷积形状
+    CONV_SHAPE_32x256,                       // 32x256 卷积形状
+    CONV_SHAPE_COUNT,                        // 卷积形状总数
 };
 
+// 卷积块大小
 struct vk_conv_block_size {
-    uint32_t K;
-    uint32_t NPQ;
-    uint32_t CRS;
+    uint32_t K;                               // 输出通道数
+    uint32_t NPQ;                             // 空间维度（NHWC）
+    uint32_t CRS;                             // 输入通道×核宽×核高
 };
 
 vk_conv_block_size vk_conv_block_sizes[CONV_SHAPE_COUNT] = {
@@ -414,31 +433,34 @@ vk_conv_block_size vk_conv_block_sizes[CONV_SHAPE_COUNT] = {
     {  32, 256, 16 }, // CONV_SHAPE_32x256
 };
 
+// 矩阵向量乘法工作组大小枚举
 enum dmmv_wg_sizes {
-    DMMV_WG_SIZE_SUBGROUP,
-    DMMV_WG_SIZE_LARGE,
-    DMMV_WG_SIZE_COUNT,
+    DMMV_WG_SIZE_SUBGROUP,                   // 子组大小
+    DMMV_WG_SIZE_LARGE,                      // 大工作组大小
+    DMMV_WG_SIZE_COUNT,                      // 工作组大小总数
 };
 
+// 闪存注意力代码路径
 enum FaCodePath {
-    FA_SCALAR,
-    FA_COOPMAT1,
-    FA_COOPMAT2,
+    FA_SCALAR,                               // 标量路径
+    FA_COOPMAT1,                             // 协作矩阵 1 路径
+    FA_COOPMAT2,                             // 协作矩阵 2 路径
 };
 
+// 闪存注意力管线状态
 struct vk_fa_pipeline_state {
-    uint32_t HSK, HSV;
-    uint32_t Br, Bc;
-    uint32_t D_split, row_split;
-    bool shmem_staging;
-    FaCodePath path;
-    uint32_t workgroup_size, subgroup_size;
-    bool aligned;
-    bool f32acc;
-    uint32_t flags;
-    uint32_t limit_occupancy_shmem;
-    ggml_type k_type;
-    ggml_type v_type;
+    uint32_t HSK, HSV;                        // 头大小（K/V）
+    uint32_t Br, Bc;                          // 行/列块大小
+    uint32_t D_split, row_split;              // 维度/行分割
+    bool shmem_staging;                       // 共享内存暂存
+    FaCodePath path;                          // 代码路径
+    uint32_t workgroup_size, subgroup_size;   // 工作组/子组大小
+    bool aligned;                             // 是否对齐
+    bool f32acc;                              // FP32 累加器
+    uint32_t flags;                           // 标志位
+    uint32_t limit_occupancy_shmem;           // 限制占用共享内存
+    ggml_type k_type;                         // K 的数据类型
+    ggml_type v_type;                         // V 的数据类型
 
     bool operator<(const vk_fa_pipeline_state &b) const {
         return std::tie(HSK, HSV, Br, Bc, D_split, row_split, shmem_staging, path, workgroup_size, subgroup_size, aligned, f32acc, flags, limit_occupancy_shmem, k_type, v_type) <
@@ -470,11 +492,12 @@ struct vk_solve_tri_pipeline_state {
     }
 };
 
+// 着色器归约模式
 enum shader_reduction_mode {
-    SHADER_REDUCTION_MODE_SHMEM,
-    SHADER_REDUCTION_MODE_HYBRID,
-    SHADER_REDUCTION_MODE_SUBGROUP,
-    SHADER_REDUCTION_MODE_COUNT,
+    SHADER_REDUCTION_MODE_SHMEM,             // 共享内存归约
+    SHADER_REDUCTION_MODE_HYBRID,            // 混合归约
+    SHADER_REDUCTION_MODE_SUBGROUP,          // 子组归约
+    SHADER_REDUCTION_MODE_COUNT,             // 归约模式总数
 };
 
 // argsort pipelines for up to 1<<10 invocations per workgroup
@@ -593,86 +616,88 @@ static constexpr std::initializer_list<std::array<int, 3>> rms_norm_mul_rope_vie
 };
 
 
+// Vulkan 设备结构体
 struct vk_device_struct {
-    std::recursive_mutex mutex;
+    std::recursive_mutex mutex;               // 递归互斥锁
 
-    vk::PhysicalDevice physical_device;
-    vk::PhysicalDeviceProperties properties;
-    std::string name;
-    uint64_t max_memory_allocation_size;
-    uint64_t max_buffer_size;
-    uint64_t suballocation_block_size;
-    uint64_t min_imported_host_pointer_alignment;
-    bool external_memory_host {};
-    bool fp16;
-    bool bf16;
-    bool pipeline_robustness;
-    bool memory_priority;
-    vk::Device device;
-    uint32_t vendor_id;
-    vk::DriverId driver_id;
-    vk_device_architecture architecture;
-    vk_queue compute_queue;
-    vk_queue transfer_queue;
-    bool single_queue;
-    bool support_async;
-    bool async_use_transfer_queue;
-    uint32_t subgroup_size;
-    uint32_t subgroup_size_log2;
-    uint32_t shader_core_count;
-    bool uma;
-    bool prefer_host_memory;
-    bool float_controls_rte_fp16;
-    bool subgroup_basic;
-    bool subgroup_arithmetic;
-    bool subgroup_shuffle;
-    bool subgroup_ballot;
-    bool subgroup_clustered;
-    bool subgroup_vote;
-    bool multi_add;
-    bool shader_int64;
-    bool buffer_device_address;
-    bool vulkan_memory_model;
+    vk::PhysicalDevice physical_device;      // 物理设备
+    vk::PhysicalDeviceProperties properties;  // 设备属性
+    std::string name;                         // 设备名称
+    uint64_t max_memory_allocation_size;      // 最大内存分配大小
+    uint64_t max_buffer_size;                 // 最大缓冲区大小
+    uint64_t suballocation_block_size;        // 子分配块大小
+    uint64_t min_imported_host_pointer_alignment; // 最小导入主机指针对齐
+    bool external_memory_host {};             // 外部主机内存支持
+    bool fp16;                                // FP16 支持
+    bool bf16;                                // BF16 支持
+    bool pipeline_robustness;                 // 管线健壮性
+    bool memory_priority;                     // 内存优先级
+    vk::Device device;                        // 逻辑设备
+    uint32_t vendor_id;                       // 厂商 ID
+    vk::DriverId driver_id;                   // 驱动 ID
+    vk_device_architecture architecture;      // 设备架构
+    vk_queue compute_queue;                   // 计算队列
+    vk_queue transfer_queue;                  // 传输队列
+    bool single_queue;                        // 是否单队列
+    bool support_async;                       // 异步支持
+    bool async_use_transfer_queue;            // 异步使用传输队列
+    uint32_t subgroup_size;                   // 子组大小
+    uint32_t subgroup_size_log2;              // 子组大小对数
+    uint32_t shader_core_count;               // 着色器核心数
+    bool uma;                                 // 统一内存架构
+    bool prefer_host_memory;                  // 偏好主机内存
+    bool float_controls_rte_fp16;             // FP16 舍入到最近偶数
+    bool subgroup_basic;                      // 基本子组支持
+    bool subgroup_arithmetic;                 // 子组算术支持
+    bool subgroup_shuffle;                    // 子组洗牌支持
+    bool subgroup_ballot;                     // 子组投票支持
+    bool subgroup_clustered;                  // 子组集群支持
+    bool subgroup_vote;                       // 子组投票支持
+    bool multi_add;                           // 多加法支持
+    bool shader_int64;                        // 64 位整数着色器支持
+    bool buffer_device_address;               // 缓冲区设备地址
+    bool vulkan_memory_model;                 // Vulkan 内存模型
 
-    bool add_rms_fusion;
-    uint32_t partials_binding_alignment;
+    bool add_rms_fusion;                      // RMS 融合支持
+    uint32_t partials_binding_alignment;      // 部分绑定对齐
 
-    bool shader_64b_indexing;
+    bool shader_64b_indexing;                 // 64 位索引着色器支持
 
-    bool integer_dot_product;
-    // 0: default, 1: force mmvq, -1: disable mmvq
+    bool integer_dot_product;                 // 整数点积支持
+    // 0: 默认，1: 强制 mmvq，-1: 禁用 mmvq
     int32_t mmvq_mode;
 
-    bool subgroup_size_control;
-    uint32_t subgroup_min_size;
-    uint32_t subgroup_max_size;
-    bool subgroup_require_full_support;
+    bool subgroup_size_control;               // 子组大小控制
+    uint32_t subgroup_min_size;               // 最小子组大小
+    uint32_t subgroup_max_size;               // 最大子组大小
+    bool subgroup_require_full_support;       // 需要完全子组支持
 
     // floor(log2(maxComputeWorkGroupInvocations))
     uint32_t max_workgroup_size_log2 {};
 
-    bool coopmat_support;
-    bool coopmat_acc_f32_support {};
-    bool coopmat_acc_f16_support {};
-    bool coopmat_bf16_support {};
-    bool coopmat_support_16x16x16_f16acc {};
-    bool coopmat_support_16x16x16_f32acc {};
-    bool coopmat1_fa_support {};
-    uint32_t coopmat_m;
-    uint32_t coopmat_n;
-    uint32_t coopmat_k;
+    bool coopmat_support;                     // 协作矩阵支持
+    bool coopmat_acc_f32_support {};          // FP32 累加器协作矩阵支持
+    bool coopmat_acc_f16_support {};          // FP16 累加器协作矩阵支持
+    bool coopmat_bf16_support {};             // BF16 协作矩阵支持
+    bool coopmat_support_16x16x16_f16acc {};  // 16x16x16 FP16 累加器协作矩阵
+    bool coopmat_support_16x16x16_f32acc {};  // 16x16x16 FP32 累加器协作矩阵
+    bool coopmat1_fa_support {};              // 协作矩阵 1 闪存注意力支持
+    uint32_t coopmat_m;                       // 协作矩阵 M 维度
+    uint32_t coopmat_n;                       // 协作矩阵 N 维度
+    uint32_t coopmat_k;                       // 协作矩阵 K 维度
 
-    bool coopmat_int_support;
-    uint32_t coopmat_int_m;
-    uint32_t coopmat_int_n;
-    uint32_t coopmat_int_k;
+    bool coopmat_int_support;                 // 整数协作矩阵支持
+    uint32_t coopmat_int_m;                   // 整数协作矩阵 M 维度
+    uint32_t coopmat_int_n;                   // 整数协作矩阵 N 维度
+    uint32_t coopmat_int_k;                   // 整数协作矩阵 K 维度
 
-    bool coopmat2;
+    bool coopmat2;                            // 协作矩阵 2
 
-    bool pipeline_executable_properties_support {};
+    bool pipeline_executable_properties_support {}; // 管线可执行属性支持
 
-    size_t idx;
+    size_t idx;                               // 设备索引
 
+    // 矩阵乘法支持标志（大、中、小尺寸）
     bool mul_mat_l[GGML_TYPE_COUNT];
     bool mul_mat_m[GGML_TYPE_COUNT];
     bool mul_mat_s[GGML_TYPE_COUNT];
@@ -680,8 +705,8 @@ struct vk_device_struct {
     bool mul_mat_id_m[GGML_TYPE_COUNT];
     bool mul_mat_id_s[GGML_TYPE_COUNT];
 
-    // Separate flags for the q8_1 (integer dot) mmq path, whose shader uses
-    // a different shared-memory layout than the float matmul shaders.
+    // q8_1（整数点积）mmq 路径的单独标志，其着色器使用
+    // 与浮点矩阵乘法着色器不同的共享内存布局
     bool mul_mat_l_int[GGML_TYPE_COUNT];
     bool mul_mat_m_int[GGML_TYPE_COUNT];
     bool mul_mat_s_int[GGML_TYPE_COUNT];
@@ -689,7 +714,7 @@ struct vk_device_struct {
     bool mul_mat_id_m_int[GGML_TYPE_COUNT];
     bool mul_mat_id_s_int[GGML_TYPE_COUNT];
 
-    vk::DescriptorSetLayout dsl;
+    vk::DescriptorSetLayout dsl;              // 描述符集布局
 
     vk_matmul_pipeline pipeline_matmul_f32 {};
     vk_matmul_pipeline pipeline_matmul_f32_f16 {};
@@ -933,15 +958,16 @@ void vk_command_pool::destroy(vk::Device& device) {
     cmd_buffers.clear();
 }
 
+// Vulkan 缓冲区结构体
 struct vk_buffer_struct {
-    vk::Buffer buffer = VK_NULL_HANDLE;
-    vk::DeviceMemory device_memory = VK_NULL_HANDLE;
-    vk::MemoryPropertyFlags memory_property_flags;
-    void * ptr;
-    size_t size = 0;
-    vk::DeviceAddress bda_addr {};
+    vk::Buffer buffer = VK_NULL_HANDLE;       // Vulkan 缓冲区对象
+    vk::DeviceMemory device_memory = VK_NULL_HANDLE; // 设备内存
+    vk::MemoryPropertyFlags memory_property_flags; // 内存属性标志
+    void * ptr;                               // 主机指针
+    size_t size = 0;                          // 缓冲区大小
+    vk::DeviceAddress bda_addr {};            // 缓冲区设备地址
 
-    vk_device device;
+    vk_device device;                         // 关联的设备
 
     ~vk_buffer_struct() {
         if (size == 0) {
@@ -954,40 +980,43 @@ struct vk_buffer_struct {
     }
 };
 
+// Vulkan 子缓冲区
 struct vk_subbuffer {
-    vk_buffer buffer;
-    uint64_t offset;
-    uint64_t size;
+    vk_buffer buffer;                         // 父缓冲区
+    uint64_t offset;                          // 偏移量
+    uint64_t size;                            // 大小
 
     operator vk::DescriptorBufferInfo() const {
         return { buffer->buffer, offset, size };
     }
 };
 
+// Vulkan 信号量
 struct vk_semaphore {
-    vk::Semaphore s;
-    uint64_t value;
+    vk::Semaphore s;                          // 信号量对象
+    uint64_t value;                           // 时间线值
 };
 
-// vk_event is used for the event-related backend interfaces. It uses vk::Events for
-// event_wait and a timeline semaphore for event_synchronize. Polling on an event for
-// event_synchronize wouldn't be sufficient to wait for command buffers to complete,
-// and would lead to validation errors.
+// vk_event 用于事件相关的后端接口。它使用 vk::Events 进行
+// event_wait，并使用时间线信号量进行 event_synchronize。对事件轮询
+// event_synchronize 不足以等待命令缓冲区完成，
+// 并且会导致验证错误。
 struct vk_event {
-    std::vector<vk::Event> events_free; // Events available for reuse
-    std::vector<vk::Event> events_submitted; // Events that are fully submitted and can be reused on next synchronize
-    vk::Event event;
-    bool has_event;
+    std::vector<vk::Event> events_free;       // 可重用的事件
+    std::vector<vk::Event> events_submitted;  // 已完全提交且可在下次同步时重用的事件
+    vk::Event event;                          // 当前事件
+    bool has_event;                           // 是否有事件
 
-    vk_semaphore tl_semaphore;
-    vk_command_buffer* cmd_buffer = nullptr;
-    uint64_t cmd_buffer_use_counter = 0;
+    vk_semaphore tl_semaphore;                // 时间线信号量
+    vk_command_buffer* cmd_buffer = nullptr;  // 命令缓冲区指针
+    uint64_t cmd_buffer_use_counter = 0;      // 命令缓冲区使用计数器
 };
 
+// Vulkan 提交结构
 struct vk_submission {
-    vk_command_buffer* buffer = nullptr;
-    std::vector<vk_semaphore> wait_semaphores;
-    std::vector<vk_semaphore> signal_semaphores;
+    vk_command_buffer* buffer = nullptr;      // 命令缓冲区
+    std::vector<vk_semaphore> wait_semaphores; // 等待的信号量
+    std::vector<vk_semaphore> signal_semaphores; // 发送的信号量
 };
 
 typedef std::vector<vk_submission> vk_sequence;
@@ -1901,72 +1930,72 @@ class vk_perf_logger {
     uint32_t print_count {};
 };
 
+// Vulkan 后端上下文结构
 struct ggml_backend_vk_context {
-    std::string name;
+    std::string name;                         // 上下文名称
 
-    vk_device device;
+    vk_device device;                         // Vulkan 设备
 
-    size_t semaphore_idx, event_idx;
-    ggml_vk_garbage_collector gc;
-    size_t prealloc_size_x, prealloc_size_y, prealloc_size_split_k, prealloc_size_add_rms_partials, prealloc_size_add_rms_partials_offset;
-    vk_buffer prealloc_x, prealloc_y, prealloc_split_k, prealloc_add_rms_partials, sync_staging;
-    vk::Fence fence, almost_ready_fence;
-    bool submit_pending {};
-    bool almost_ready_fence_pending {};
-    // Set before op_add and unset after op_rms_norm to indicate that the add should
-    // write partial sums to accumulate the square of the vector components
+    size_t semaphore_idx, event_idx;          // 信号量/事件索引
+    ggml_vk_garbage_collector gc;             // 垃圾回收器
+    size_t prealloc_size_x, prealloc_size_y, prealloc_size_split_k, prealloc_size_add_rms_partials, prealloc_size_add_rms_partials_offset; // 预分配缓冲区大小
+    vk_buffer prealloc_x, prealloc_y, prealloc_split_k, prealloc_add_rms_partials, sync_staging; // 预分配缓冲区
+    vk::Fence fence, almost_ready_fence;      // 围栏对象
+    bool submit_pending {};                   // 待提交标志
+    bool almost_ready_fence_pending {};        // 准备就绪围栏待处理标志
+    // 在 op_add 之前设置，在 op_rms_norm 之后取消设置，指示 add 应该
+    // 写入部分和以累积向量分量的平方
     bool do_add_rms_partials_offset_calculation;
     bool do_add_rms_partials;
 
-    uint64_t last_total_mul_mat_bytes {};
+    uint64_t last_total_mul_mat_bytes {};      // 上次总矩阵乘法字节数
 
-    // Cache most recent tensor that was converted into prealloc_y, and what pipeline it used to convert.
+    // 缓存最近转换为 prealloc_y 的张量以及用于转换的管线
     vk_pipeline_struct * prealloc_y_last_pipeline_used {};
     const ggml_tensor * prealloc_y_last_tensor_used {};
 
-    // Track which nodes have been used since the last sync, and whether they were written to
+    // 跟踪自上次同步以来使用了哪些节点，以及是否写入它们
     std::vector<const ggml_tensor *> unsynced_nodes_written;
     std::vector<const ggml_tensor *> unsynced_nodes_read;
-    // Track which prealloc buffers have pending reads that need to be synchronized.
-    // These are checked before writing to the buffer (and call ggml_vk_sync_buffers if set),
-    // and set to true after the buffer contents are consumed.
+    // 跟踪哪些预分配缓冲区有待处理的读取需要同步
+    // 这些在写入缓冲区之前进行检查（如果设置了则调用 ggml_vk_sync_buffers），
+    // 并在消耗缓冲区内容后设置为 true
     bool prealloc_x_need_sync, prealloc_y_need_sync, prealloc_split_k_need_sync;
 
-    vk_context_ref compute_ctx;
+    vk_context_ref compute_ctx;                // 计算上下文引用
 
-    vk_context_ref transfer_ctx;
-    vk_semaphore transfer_semaphore;
-    uint64_t transfer_semaphore_last_submitted {};
+    vk_context_ref transfer_ctx;               // 传输上下文引用
+    vk_semaphore transfer_semaphore;           // 传输信号量
+    uint64_t transfer_semaphore_last_submitted {}; // 上次提交的传输信号量
 
-    std::vector<vk_context_ref> tensor_ctxs;
+    std::vector<vk_context_ref> tensor_ctxs;   // 张量上下文引用
 
-    std::vector<vk::DescriptorPool> descriptor_pools;
-    std::vector<vk::DescriptorSet> descriptor_sets;
-    uint32_t descriptor_set_idx {};
-    uint32_t pipeline_descriptor_set_requirements {};
+    std::vector<vk::DescriptorPool> descriptor_pools; // 描述符池
+    std::vector<vk::DescriptorSet> descriptor_sets;   // 描述符集
+    uint32_t descriptor_set_idx {};            // 描述符集索引
+    uint32_t pipeline_descriptor_set_requirements {}; // 管线描述符集需求
 
-    vk_command_pool compute_cmd_pool;
-    vk_command_pool transfer_cmd_pool;
+    vk_command_pool compute_cmd_pool;          // 计算命令池
+    vk_command_pool transfer_cmd_pool;         // 传输命令池
 
-    // number of additional consecutive nodes that are being fused with the
-    // node currently being processed
+    // 与当前正在处理的节点融合的额外连续节点数
     int num_additional_fused_ops {};
-    // Bitmask of which fused ops need to write an intermediate value to memory.
-    // Bit 'i' means nodes[start_of_fusion + i] writes to memory.
-    // If there's no fusion, bit 0 is still set.
+    // 哪些融合操作需要将中间值写入内存的位掩码
+    // 位 'i' 表示 nodes[start_of_fusion + i] 写入内存
+    // 如果没有融合，位 0 仍然设置
     int fused_ops_write_mask {};
-    topk_moe_mode fused_topk_moe_mode {};
-    bool fused_topk_moe_scale {};
+    topk_moe_mode fused_topk_moe_mode {};      // 融合的 TopK MoE 模式
+    bool fused_topk_moe_scale {};              // 融合的 TopK MoE 缩放
 
-    // for GGML_VK_PERF_LOGGER
-    std::unique_ptr<vk_perf_logger> perf_logger;
-    vk::QueryPool query_pool;
-    std::vector<const char *> query_fusion_names;
-    std::vector<int> query_fusion_node_count;
-    std::vector<ggml_tensor *> query_nodes;
-    std::vector<int> query_node_idx;
-    int32_t num_queries {};
-    int32_t query_idx {};
+    // 用于 GGML_VK_PERF_LOGGER
+    std::unique_ptr<vk_perf_logger> perf_logger; // 性能日志记录器
+    vk::QueryPool query_pool;                  // 查询池
+    std::vector<const char *> query_fusion_names; // 查询融合名称
+    std::vector<int> query_fusion_node_count;  // 查询融合节点计数
+    std::vector<ggml_tensor *> query_nodes;    // 查询节点
+    std::vector<int> query_node_idx;           // 查询节点索引
+    int32_t num_queries {};                    // 查询数量
+    int32_t query_idx {};                      // 查询索引
 };
 
 static void * const vk_ptr_base = (void *)(uintptr_t) 0x1000;  // NOLINT

@@ -1,3 +1,6 @@
+// GGML RPC (Remote Procedure Call) 后端实现
+// 提供基于 RPC 的分布式推理支持
+// 允许在远程机器上执行计算任务
 #include "ggml-rpc.h"
 #include "ggml-impl.h"
 #include "ggml-backend-impl.h"
@@ -26,12 +29,12 @@ static const char * RPC_DEBUG = std::getenv("GGML_RPC_DEBUG");
 
 namespace fs = std::filesystem;
 
-// macro for nicer error messages on server crash
+// 服务器崩溃时更好的错误消息宏
 #define RPC_STATUS_ASSERT(x) if (!(x)) GGML_ABORT("Remote RPC server crashed or returned malformed response")
 
-// all RPC structures must be packed
+// 所有 RPC 结构体必须打包
 #pragma pack(push, 1)
-// ggml_tensor is serialized into rpc_tensor
+// ggml_tensor 被序列化为 rpc_tensor
 struct rpc_tensor {
     uint64_t id;
     uint32_t type;
@@ -52,7 +55,7 @@ struct rpc_tensor {
 
 static_assert(sizeof(rpc_tensor) % 8 == 0, "rpc_tensor size must be multiple of 8");
 
-// RPC commands
+// RPC 命令枚举
 enum rpc_cmd {
     RPC_CMD_ALLOC_BUFFER = 0,
     RPC_CMD_GET_ALIGNMENT,
@@ -71,13 +74,13 @@ enum rpc_cmd {
     RPC_CMD_HELLO,
     RPC_CMD_DEVICE_COUNT,
     RPC_CMD_GRAPH_RECOMPUTE,
-    RPC_CMD_COUNT,
+    RPC_CMD_COUNT,                      // RPC 命令总数
 };
 
 static_assert(RPC_CMD_HELLO == 14, "RPC_CMD_HELLO must be always 14");
 
-// Try RPC_CMD_SET_TENSOR_HASH first when data size is larger than this threshold
-const size_t HASH_THRESHOLD = 10 * 1024 * 1024;
+// 当数据大小大于此阈值时，首先尝试 RPC_CMD_SET_TENSOR_HASH
+const size_t HASH_THRESHOLD = 10 * 1024 * 1024; // 10MB
 
 struct rpc_msg_hello_req {
     uint8_t conn_caps[RPC_CONN_CAPS_SIZE];
